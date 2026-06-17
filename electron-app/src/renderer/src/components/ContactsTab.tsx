@@ -20,6 +20,7 @@ const InstagramIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 export const ContactsTab: React.FC<ContactsTabProps> = ({ contacts }) => {
   const [searchQuery, setSearchQuery] = useState('')
+  const [selectedContact, setSelectedContact] = useState<ContactRecord | null>(null)
 
   // Filter contacts by name or number
   const filteredContacts = contacts.filter(
@@ -27,6 +28,41 @@ export const ContactsTab: React.FC<ContactsTabProps> = ({ contacts }) => {
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.number.includes(searchQuery)
   )
+
+  // Sort contacts by name
+  const sortedContacts = [...filteredContacts].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  )
+
+  // Group by first letter
+  const groupedContacts: { [key: string]: ContactRecord[] } = {}
+  sortedContacts.forEach((c) => {
+    const letter = (c.name || '#').charAt(0).toUpperCase()
+    const key = /[A-Z]/.test(letter) ? letter : '#'
+    if (!groupedContacts[key]) {
+      groupedContacts[key] = []
+    }
+    groupedContacts[key].push(c)
+  })
+
+  // Get sorted keys of groups (A-Z first, then #)
+  const groupKeys = Object.keys(groupedContacts).sort((a, b) => {
+    if (a === '#') return 1
+    if (b === '#') return -1
+    return a.localeCompare(b)
+  })
+
+  // Automatically select first contact when list changes
+  React.useEffect(() => {
+    if (sortedContacts.length > 0) {
+      const stillExists = selectedContact && sortedContacts.some(c => c.id === selectedContact.id && c.number === selectedContact.number)
+      if (!stillExists) {
+        setSelectedContact(sortedContacts[0])
+      }
+    } else {
+      setSelectedContact(null)
+    }
+  }, [contacts, searchQuery])
 
   const handleDial = async (number: string) => {
     try {
@@ -52,94 +88,131 @@ export const ContactsTab: React.FC<ContactsTabProps> = ({ contacts }) => {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-primary overflow-hidden">
-      
-      {/* Search Header */}
-      <div className="p-6 border-b border-border flex items-center justify-between flex-shrink-0">
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-tight">Contacts</h2>
-          <p className="text-xs text-muted mt-0.5">Quickly search your phonebook and initiate calls</p>
+    <div className="flex-1 flex h-full bg-primary overflow-hidden">
+      {/* Left Pane: Search and Grouped List */}
+      <div className="w-80 border-r border-border flex flex-col h-full bg-sidebar flex-shrink-0">
+        {/* Search Header */}
+        <div className="p-4 border-b border-border space-y-3">
+          <div>
+            <h2 className="text-lg font-bold text-white tracking-tight">Contacts</h2>
+            <p className="text-[10px] text-muted mt-0.5">Quickly search and dial contacts</p>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 text-dim" size={14} />
+            <input
+              type="text"
+              placeholder="Search contacts..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-card border border-border rounded-lg pl-9 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-accent placeholder:text-dim transition-colors"
+            />
+          </div>
         </div>
-        
-        {/* Search Bar */}
-        <div className="relative w-72">
-          <Search className="absolute left-3 top-2.5 text-dim" size={16} />
-          <input
-            type="text"
-            placeholder="Search contacts..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-card border border-border rounded-lg pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-accent placeholder:text-dim transition-colors"
-          />
+
+        {/* Scrollable Grouped List */}
+        <div className="flex-1 overflow-y-auto divide-y divide-border/10">
+          {groupKeys.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center text-dim p-4 space-y-2">
+              <User size={32} className="opacity-25" />
+              <p className="text-xs font-semibold">No contacts found</p>
+            </div>
+          ) : (
+            groupKeys.map((key) => (
+              <div key={key} className="p-2">
+                {/* Group Letter */}
+                <div className="px-3 py-1 text-[10px] font-bold text-accent tracking-wider uppercase">
+                  {key}
+                </div>
+                {/* Group Items */}
+                <div className="space-y-0.5 mt-1">
+                  {groupedContacts[key].map((c) => {
+                    const isSelected = selectedContact?.id === c.id && selectedContact?.number === c.number
+                    const initials = (c.name || 'U').charAt(0).toUpperCase()
+                    return (
+                      <button
+                        key={c.id + c.number}
+                        onClick={() => setSelectedContact(c)}
+                        className={`w-full text-left px-3 py-2 rounded-lg flex items-center space-x-3 transition-all ${
+                          isSelected
+                            ? 'bg-accent/15 text-white border-l-2 border-accent'
+                            : 'hover:bg-hover text-secondary hover:text-white'
+                        }`}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center text-xs font-bold text-accent flex-shrink-0">
+                          {initials}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold truncate">{c.name}</p>
+                          <p className="text-[10px] text-dim truncate mt-0.5">{c.number}</p>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
-      {/* Contacts List */}
-      <div className="flex-1 overflow-y-auto p-6">
-        {filteredContacts.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center text-dim space-y-3">
-            <User size={48} className="opacity-25" />
-            <p className="text-sm font-semibold">No contacts found</p>
-            <p className="text-xs max-w-sm px-6">
-              {searchQuery ? 'Try adjusting your search criteria.' : 'Contacts list will sync automatically once paired.'}
-            </p>
+      {/* Right Pane: Selected Contact Details */}
+      <div className="flex-1 flex flex-col h-full bg-primary justify-center items-center p-8 overflow-y-auto">
+        {selectedContact ? (
+          <div className="max-w-md w-full bg-sidebar border border-border rounded-2xl p-8 flex flex-col items-center text-center shadow-lg space-y-6">
+            {/* Large Avatar */}
+            <div className="w-24 h-24 rounded-full bg-accent/10 border-2 border-accent/30 flex items-center justify-center text-3xl font-bold text-accent shadow-inner">
+              {(selectedContact.name || 'U').charAt(0).toUpperCase()}
+            </div>
+
+            {/* Name & Number */}
+            <div className="space-y-1">
+              <h3 className="text-xl font-bold text-white tracking-tight">{selectedContact.name}</h3>
+              <p className="text-sm text-muted font-mono">{selectedContact.number}</p>
+            </div>
+
+            {/* Separator */}
+            <hr className="w-full border-border/60" />
+
+            {/* Action Buttons */}
+            <div className="w-full space-y-3">
+              {/* Call */}
+              <button
+                onClick={() => handleDial(selectedContact.number)}
+                className="w-full py-2.5 px-4 bg-accent hover:bg-accent-dark text-white rounded-xl font-semibold text-xs flex items-center justify-center space-x-2.5 transition-all shadow-md hover:shadow-lg"
+              >
+                <Phone size={14} />
+                <span>Call Device</span>
+              </button>
+
+              {/* WhatsApp */}
+              <button
+                onClick={() => handleWhatsApp(selectedContact.number)}
+                className="w-full py-2.5 px-4 bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 rounded-xl font-semibold text-xs flex items-center justify-center space-x-2.5 transition-all"
+              >
+                <WhatsAppIcon className="w-3.5 h-3.5 fill-current" />
+                <span>Message on WhatsApp</span>
+              </button>
+
+              {/* Instagram */}
+              <button
+                onClick={handleInstagram}
+                className="w-full py-2.5 px-4 bg-pink-500/10 hover:bg-pink-500/25 text-pink-400 border border-pink-500/30 rounded-xl font-semibold text-xs flex items-center justify-center space-x-2.5 transition-all"
+              >
+                <InstagramIcon className="w-3.5 h-3.5 fill-current" />
+                <span>Instagram Direct Message</span>
+              </button>
+            </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredContacts.map((c) => {
-              const initials = (c.name || 'U').charAt(0).toUpperCase()
-              return (
-                <div
-                  key={c.id + c.number}
-                  className="bg-sidebar border border-border rounded-xl p-4 flex items-center justify-between hover:border-accent/40 hover:bg-hover transition-all duration-150"
-                >
-                  <div className="flex items-center space-x-3.5 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-card border border-border flex items-center justify-center text-sm font-bold text-accent flex-shrink-0">
-                      {initials}
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-sm font-semibold text-white truncate" title={c.name}>
-                        {c.name}
-                      </h4>
-                      <p className="text-xs text-muted mt-0.5 truncate">{c.number}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-2 flex-shrink-0">
-                    {/* Dial Button */}
-                    <button
-                      onClick={() => handleDial(c.number)}
-                      className="p-2.5 bg-card hover:bg-hover text-accent rounded-lg border border-border/80 hover:border-accent/30 transition-all flex items-center justify-center"
-                      title={`Call ${c.name}`}
-                    >
-                      <Phone size={14} />
-                    </button>
-                    
-                    {/* WhatsApp Button */}
-                    <button
-                      onClick={() => handleWhatsApp(c.number)}
-                      className="p-2.5 bg-card hover:bg-hover text-emerald-500 rounded-lg border border-border/80 hover:border-emerald-500/30 transition-all flex items-center justify-center"
-                      title={`WhatsApp ${c.name}`}
-                    >
-                      <WhatsAppIcon className="w-3.5 h-3.5 fill-current" />
-                    </button>
-
-                    {/* Instagram Button */}
-                    <button
-                      onClick={handleInstagram}
-                      className="p-2.5 bg-card hover:bg-hover text-pink-500 rounded-lg border border-border/80 hover:border-pink-500/30 transition-all flex items-center justify-center"
-                      title="Instagram DMs"
-                    >
-                      <InstagramIcon className="w-3.5 h-3.5 fill-current" />
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
+          <div className="text-center text-dim space-y-3">
+            <User size={64} className="opacity-15 mx-auto" />
+            <h3 className="text-sm font-semibold">No Contact Selected</h3>
+            <p className="text-xs max-w-xs px-6">
+              Select a contact from the left list to view details and start call/message actions.
+            </p>
           </div>
         )}
       </div>
-
     </div>
   )
 }

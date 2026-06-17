@@ -26,7 +26,10 @@ class PhoneNotificationService : NotificationListenerService() {
         private var instance: PhoneNotificationService? = null
 
         fun replyToNotification(context: android.content.Context, key: String, message: String): Boolean {
-            val service = instance ?: return false
+            val service = instance ?: run {
+                Log.e(TAG, "[NOTIFICATION] Reply failed: Service not running")
+                return false
+            }
             try {
                 val activeNotifs = service.activeNotifications
                 for (sbn in activeNotifs) {
@@ -44,14 +47,17 @@ class PhoneNotificationService : NotificationListenerService() {
                                     bundle
                                 )
                                 action.actionIntent.send(context, 0, intent)
+                                Log.i(TAG, "[NOTIFICATION] Reply success")
                                 return true
                             }
                         }
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to reply to notification: $key", e)
+                Log.e(TAG, "[NOTIFICATION] Reply failed: Exception", e)
+                return false
             }
+            Log.e(TAG, "[NOTIFICATION] Reply failed: Notification key not found or no remote input action")
             return false
         }
 

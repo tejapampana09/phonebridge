@@ -24,6 +24,13 @@ private const val ACTION_STOP      = "com.phonebridge.ACTION_STOP"
  * Foreground service that maintains the persistent connection to the PC.
  * Runs a 30-second heartbeat to send DEVICE_STATUS.
  * Restarts itself on kill via START_STICKY.
+ *
+ * NOTE: Bluetooth call audio is not implemented.
+ * This is a data transport only channel.
+ * To support Microsoft Phone Link style calling over Bluetooth:
+ * - Android side requires AudioManager.startBluetoothSco() for audio routing to Bluetooth SCO channel.
+ * - Windows side requires Bluetooth HFP (Hands-Free Profile) implementation, speaker/microphone routing,
+ *   and proper call state synchronization.
  */
 class PhoneLinkService : Service() {
 
@@ -36,6 +43,7 @@ class PhoneLinkService : Service() {
 
     companion object {
         @Volatile private var instance: PhoneLinkService? = null
+        @Volatile var lastClipboardText: String? = null
 
         fun isRunning(): Boolean = instance != null
 
@@ -140,6 +148,10 @@ class PhoneLinkService : Service() {
         }
         val text = com.phonebridge.sync.ClipboardSync.getCurrentClipboard(this)
         if (!text.isNullOrBlank()) {
+            if (text == lastClipboardText) {
+                return@OnPrimaryClipChangedListener
+            }
+            lastClipboardText = text
             val clipJson = org.json.JSONObject().apply {
                 put("type", "CLIPBOARD_CHANGED")
                 put("text", text)

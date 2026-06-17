@@ -24,6 +24,8 @@ object ContactsSync {
             }.toString()
         }
 
+        Log.i(TAG, "[SYNC] Sending contacts")
+
         val cursor = context.contentResolver.query(
             ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
             arrayOf(
@@ -65,6 +67,8 @@ object ContactsSync {
         } catch (e: Exception) {
             Log.e(TAG, "Error querying contacts", e)
         }
+
+        Log.i(TAG, "[SYNC] Contacts count: ${contactArray.length()}")
 
         return JSONObject().apply {
             put("type", "CONTACTS_HISTORY")

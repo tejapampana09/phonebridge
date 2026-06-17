@@ -136,8 +136,15 @@ object MessageHandler {
                     val pcName = json.optString("pcName", "PC")
                     PairingManager.savePcName(pcName)
                     Log.i(TAG, "CONNECT_ACK from $pcName")
-                    // Note: sync is already triggered by WebSocketClient.onOpen()
-                    // Do NOT call triggerSync here — it causes every connection to sync twice.
+                    
+                    // Trigger contacts and apps sync on connection acknowledgment
+                    syncScope.launch {
+                        delay(200)
+                        ConnectionManager.send(com.phonebridge.sync.ContactsSync.getAllContacts(context))
+                        delay(200)
+                        ConnectionManager.send(com.phonebridge.sync.InstalledAppsSync.getInstalledApps(context))
+                    }
+
                     // Broadcast to update UI
                     val intent = Intent(ACTION_CONNECTED).putExtra(EXTRA_PC_NAME, pcName)
                     context.sendBroadcast(intent)
@@ -156,7 +163,8 @@ object MessageHandler {
                     val text = json.optString("text")
                     if (text.isNotBlank()) {
                         // Suppress the echo loop: tell PhoneLinkService to skip the next
-                        // clipboard change event so it doesn't send CLIPBOARD_CHANGED back to PC
+                        // clipboard change event and record the text
+                        com.phonebridge.services.PhoneLinkService.lastClipboardText = text
                         com.phonebridge.services.PhoneLinkService.suppressNextClipboard()
                         val handler = android.os.Handler(android.os.Looper.getMainLooper())
                         handler.post {
@@ -206,14 +214,25 @@ object MessageHandler {
 
     private fun dialNumber(context: Context, number: String) {
         try {
-            val intent = Intent(Intent.ACTION_DIAL).apply {
+            Log.i(TAG, "[CALL] Initiating call")
+            if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.CALL_PHONE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Log.e(TAG, "[CALL] Permission missing")
+                // Fallback to dialer if CALL_PHONE permission is missing
+                val intent = Intent(Intent.ACTION_DIAL).apply {
+                    data = android.net.Uri.parse("tel:$number")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+                return
+            }
+            val intent = Intent(Intent.ACTION_CALL).apply {
                 data = android.net.Uri.parse("tel:$number")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
-            Log.i(TAG, "Dial intent started for $number")
+            Log.i(TAG, "[CALL] Call started")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to dial number $number", e)
+            Log.e(TAG, "Failed to start call for $number", e)
         }
     }
 
@@ -229,18 +248,41 @@ object MessageHandler {
 
     fun triggerSync(context: Context) {
         try {
-            ConnectionManager.send(com.phonebridge.sync.CallLogSync.getLastNCalls(context))
+            // Sequence:
+            // 1. DEVICE_STATUS
+            ConnectionManager.send(buildDeviceStatus(context))
             syncScope.launch {
-                delay(200)
-                ConnectionManager.send(com.phonebridge.sync.SmsSync.getLastNThreads(context))
-                delay(200)
-                ConnectionManager.send(com.phonebridge.sync.PhotoSync.getRecentPhotos(context))
+                // 2. CONTACTS_HISTORY
                 delay(200)
                 ConnectionManager.send(com.phonebridge.sync.ContactsSync.getAllContacts(context))
+                
+                // 3. APPS_HISTORY
                 delay(200)
                 ConnectionManager.send(com.phonebridge.sync.InstalledAppsSync.getInstalledApps(context))
+                
+                // 4. SMS_HISTORY
                 delay(200)
-                ConnectionManager.send(buildDeviceStatus(context))
+                ConnectionManager.send(com.phonebridge.sync.SmsSync.getLastNThreads(context))
+                
+                // 5. CALL_HISTORY
+                delay(200)
+                ConnectionManager.send(com.phonebridge.sync.CallLogSync.getLastNCalls(context))
+                
+                // 6. CLIPBOARD_CHANGED (current clipboard)
+                delay(200)
+                val currentClip = com.phonebridge.sync.ClipboardSync.getCurrentClipboard(context)
+                if (!currentClip.isNullOrBlank()) {
+                    com.phonebridge.services.PhoneLinkService.lastClipboardText = currentClip
+                    val clipJson = JSONObject().apply {
+                        put("type", MsgType.CLIPBOARD_CHANGED)
+                        put("text", currentClip)
+                    }
+                    ConnectionManager.send(clipJson.toString())
+                }
+
+                // Also send recent photos as before (keeps existing photos feature working)
+                delay(200)
+                ConnectionManager.send(com.phonebridge.sync.PhotoSync.getRecentPhotos(context))
             }
         } catch (e: Exception) {
             Log.e(TAG, "Sync failed", e)

@@ -22,6 +22,13 @@ private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34
 /**
  * Bluetooth RFCOMM (SPP) client.
  * Connects to the paired PC device by name, sends/receives JSON messages.
+ *
+ * NOTE: Bluetooth call audio is not implemented.
+ * This is a data transport only channel.
+ * To support Microsoft Phone Link style calling over Bluetooth:
+ * - Android side requires AudioManager.startBluetoothSco() for audio routing to Bluetooth SCO channel.
+ * - Windows side requires Bluetooth HFP (Hands-Free Profile) implementation, speaker/microphone routing,
+ *   and proper call state synchronization.
  */
 object BluetoothClient {
 

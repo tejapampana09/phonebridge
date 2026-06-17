@@ -17,6 +17,7 @@ private const val TAG = "InstalledAppsSync"
 object InstalledAppsSync {
 
     fun getInstalledApps(context: Context): String {
+        Log.i(TAG, "[SYNC] Sending installed apps")
         val appsArray = JSONArray()
         val pm = context.packageManager
         

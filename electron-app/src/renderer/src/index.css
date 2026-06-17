@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #1C1C1C;
+  color: #fff;
+  font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Custom scrollbars matching Microsoft Phone Link style */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1C1C1C;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3A3A3A;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}
+
+/* Titlebar drag regions for custom window controls */
+.titlebar {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}

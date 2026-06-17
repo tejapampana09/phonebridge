@@ -1,0 +1,278 @@
+import { WebSocketServer, WebSocket } from 'ws'
+import * as os from 'os'
+import {
+  saveNotification,
+  saveCalls,
+  saveSmses,
+  savePhotos,
+  updateDeviceStatus
+} from './database'
+import { emitToRenderer } from './ipc'
+import { showNotification, showCallNotification } from './notifications'
+
+interface ConnectedClient {
+  ws: WebSocket
+  deviceName: string
+  lastPong: number
+}
+
+const clients = new Map<WebSocket, ConnectedClient>()
+let wss: WebSocketServer | null = null
+let pingInterval: NodeJS.Timeout | null = null
+
+export function startWebSocketServer(): void {
+  wss = new WebSocketServer({ port: 8765 })
+
+  wss.on('listening', () => {
+    console.log('[WS] WebSocket server listening on port 8765')
+  })
+
+  wss.on('connection', (ws: WebSocket, req) => {
+    const remoteAddr = req.socket.remoteAddress || 'unknown'
+    console.log(`[WS] Client connected from ${remoteAddr}`)
+
+    const client: ConnectedClient = {
+      ws,
+      deviceName: 'Android Phone',
+      lastPong: Date.now()
+    }
+    clients.set(ws, client)
+
+    // Send acknowledgement
+    sendToClient(ws, {
+      type: 'CONNECT_ACK',
+      pcName: os.hostname()
+    })
+
+    // Notify renderer
+    emitToRenderer('connection-changed', {
+      connected: true,
+      count: clients.size
+    })
+
+    ws.on('message', (data: Buffer) => {
+      try {
+        const message = JSON.parse(data.toString())
+        handleIncoming(message, { type: 'ws', ws })
+      } catch (err) {
+        console.error('[WS] Failed to parse message:', err)
+      }
+    })
+
+    ws.on('close', () => {
+      console.log(`[WS] Client disconnected: ${remoteAddr}`)
+      clients.delete(ws)
+      emitToRenderer('connection-changed', {
+        connected: clients.size > 0,
+        count: clients.size
+      })
+    })
+
+    ws.on('error', (err) => {
+      console.error('[WS] Client error:', err)
+      clients.delete(ws)
+    })
+
+    ws.on('pong', () => {
+      const c = clients.get(ws)
+      if (c) c.lastPong = Date.now()
+    })
+  })
+
+  wss.on('error', (err) => {
+    console.error('[WS] Server error:', err)
+  })
+
+  // Auto-ping every 30 seconds
+  pingInterval = setInterval(() => {
+    const now = Date.now()
+    clients.forEach((client, ws) => {
+      if (now - client.lastPong > 90000) {
+        // No pong for 90s → terminate
+        console.warn(`[WS] Client ${client.deviceName} timed out`)
+        ws.terminate()
+        clients.delete(ws)
+        return
+      }
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.ping()
+        // Also send JSON PING
+        sendToClient(ws, { type: 'PING', timestamp: now })
+      }
+    })
+  }, 30000)
+}
+
+export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'ws' | 'bt', ws?: WebSocket }): void {
+  const type = msg.type as string
+
+  switch (type) {
+    case 'NOTIFICATION': {
+      const notif = {
+        id: (msg.id as string) || `notif_${Date.now()}`,
+        app: (msg.app as string) || 'Unknown',
+        appPackage: (msg.appPackage as string) || '',
+        title: (msg.title as string) || '',
+        message: (msg.message as string) || '',
+        timestamp: (msg.timestamp as string) || new Date().toISOString(),
+        icon: (msg.icon as string) || undefined
+      }
+      saveNotification(notif)
+      showNotification(notif.app, notif.title, notif.message)
+      emitToRenderer('phone-event', { type: 'NOTIFICATION', data: notif })
+      break
+    }
+
+    case 'CALL_INCOMING': {
+      const call = {
+        number: (msg.number as string) || 'Unknown',
+        name: (msg.name as string) || 'Unknown',
+        avatar: (msg.avatar as string) || undefined
+      }
+      showCallNotification(call.name, call.number)
+      emitToRenderer('phone-event', { type: 'CALL_INCOMING', data: call })
+      break
+    }
+
+    case 'CALL_UPDATE': {
+      emitToRenderer('phone-event', {
+        type: 'CALL_UPDATE',
+        data: {
+          status: msg.status,
+          duration: msg.duration
+        }
+      })
+      break
+    }
+
+    case 'CALL_HISTORY': {
+      const calls = (msg.calls as Array<Record<string, unknown>>) || []
+      const normalized = calls.map((c) => ({
+        id: (c.id as string) || `call_${Date.now()}`,
+        number: (c.number as string) || '',
+        name: (c.name as string) || '',
+        callType: (c.callType as string) || 'incoming',
+        duration: (c.duration as number) || 0,
+        timestamp: (c.timestamp as string) || new Date().toISOString()
+      }))
+      saveCalls(normalized)
+      emitToRenderer('phone-event', { type: 'CALL_HISTORY', data: normalized })
+      break
+    }
+
+    case 'SMS_RECEIVED': {
+      const sms = {
+        id: (msg.id as string) || `sms_${Date.now()}`,
+        address: (msg.address as string) || '',
+        name: (msg.name as string) || '',
+        body: (msg.body as string) || '',
+        timestamp: (msg.timestamp as string) || new Date().toISOString()
+      }
+      saveSmses({
+        threads: [
+          {
+            id: sms.address,
+            address: sms.address,
+            name: sms.name,
+            lastMessage: sms.body,
+            timestamp: sms.timestamp,
+            messages: [
+              {
+                ...sms,
+                threadId: sms.address,
+                direction: 'in' as const
+              }
+            ]
+          }
+        ]
+      })
+      emitToRenderer('phone-event', { type: 'SMS_RECEIVED', data: sms })
+      break
+    }
+
+    case 'SMS_HISTORY': {
+      const threads = msg.threads as Array<Record<string, unknown>>
+      if (threads) {
+        saveSmses({ threads: threads as Parameters<typeof saveSmses>[0]['threads'] })
+        emitToRenderer('phone-event', { type: 'SMS_HISTORY', data: threads })
+      }
+      break
+    }
+
+    case 'PHOTO_METADATA': {
+      const photos = (msg.photos as Array<Record<string, unknown>>) || []
+      const normalized = photos.map((p) => ({
+        id: (p.id as string) || `photo_${Date.now()}`,
+        name: (p.name as string) || 'photo.jpg',
+        size: (p.size as number) || 0,
+        timestamp: (p.timestamp as string) || new Date().toISOString()
+      }))
+      savePhotos(normalized)
+      emitToRenderer('phone-event', { type: 'PHOTO_METADATA', data: normalized })
+      break
+    }
+
+    case 'DEVICE_STATUS': {
+      const status = {
+        battery: (msg.battery as number) || 0,
+        charging: Boolean(msg.charging),
+        network: (msg.network as string) || 'offline',
+        signal: (msg.signal as number) || 0,
+        deviceName: (msg.deviceName as string) || 'Android Phone'
+      }
+      if (source?.type === 'ws' && source.ws) {
+        const client = clients.get(source.ws)
+        if (client) client.deviceName = status.deviceName
+      }
+      updateDeviceStatus(status)
+      emitToRenderer('phone-event', { type: 'DEVICE_STATUS', data: status })
+      break
+    }
+
+    case 'PONG': {
+      if (source?.type === 'ws' && source.ws) {
+        const client = clients.get(source.ws)
+        if (client) client.lastPong = Date.now()
+      }
+      break
+    }
+
+    default:
+      console.log(`[WS] Unknown message type: ${type}`)
+  }
+}
+
+function sendToClient(ws: WebSocket, message: object): void {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(message))
+  }
+}
+
+export function sendToPhone(message: object): void {
+  clients.forEach((_, ws) => {
+    sendToClient(ws, message)
+  })
+}
+
+export function broadcast(message: object): void {
+  sendToPhone(message)
+}
+
+export function getConnectedCount(): number {
+  return clients.size
+}
+
+export function getConnectedDeviceNames(): string[] {
+  return Array.from(clients.values()).map((c) => c.deviceName)
+}
+
+export function stopWebSocketServer(): void {
+  if (pingInterval) {
+    clearInterval(pingInterval)
+    pingInterval = null
+  }
+  clients.forEach((_, ws) => ws.terminate())
+  clients.clear()
+  wss?.close()
+  wss = null
+}

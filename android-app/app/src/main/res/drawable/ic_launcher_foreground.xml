@@ -1,0 +1,37 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Blue rounded rect glow -->
+    <path
+        android:fillColor="#1A4F8EF7"
+        android:pathData="M24,34 C24,28.477 28.477,24 34,24 L74,24 C79.523,24 84,28.477 84,34 L84,74 C84,79.523 79.523,84 74,84 L34,84 C28.477,84 24,79.523 24,74 Z" />
+    <!-- Phone icon - body -->
+    <path
+        android:fillColor="#4F8EF7"
+        android:pathData="M45,30 C42.791,30 41,31.791 41,34 L41,74 C41,76.209 42.791,78 45,78 L63,78 C65.209,78 67,76.209 67,74 L67,34 C67,31.791 65.209,30 63,30 Z" />
+    <!-- Screen -->
+    <path
+        android:fillColor="#0A0A12"
+        android:pathData="M43,36 L65,36 L65,68 L43,68 Z" />
+    <!-- Home button dot -->
+    <path
+        android:fillColor="#4F8EF7"
+        android:pathData="M54,71 C55.105,71 56,71.895 56,73 C56,74.105 55.105,75 54,75 C52.895,75 52,74.105 52,73 C52,71.895 52.895,71 54,71 Z" />
+    <!-- Wifi arc - signal indicator -->
+    <path
+        android:strokeColor="#22C55E"
+        android:strokeWidth="2"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M48,44 C50.5,41.5 57.5,41.5 60,44" />
+    <path
+        android:strokeColor="#22C55E"
+        android:strokeWidth="2.5"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M45,41 C49,37 59,37 63,41" />
+    <!-- Center dot -->
+    <path
+        android:fillColor="#22C55E"
+        android:pathData="M54,46 C55.105,46 56,46.895 56,48 C56,49.105 55.105,50 54,50 C52.895,50 52,49.105 52,48 C52,46.895 52.895,46 54,46 Z" />
+</vector>

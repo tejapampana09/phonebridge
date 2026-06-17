@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PhoneBridge</string>
+    <string name="channel_name">PhoneBridge Sync</string>
+    <string name="channel_description">Keeps your phone connected to PC</string>
+    <string name="notification_connected">Connected</string>
+    <string name="notification_connecting">Connecting…</string>
+    <string name="notification_disconnected">Disconnected — tap to reconnect</string>
+    <string name="btn_sync">Sync Now</string>
+    <string name="btn_disconnect">Disconnect</string>
+    <string name="btn_repair">Re-pair</string>
+    <string name="lbl_connection_status">Connection Status</string>
+    <string name="lbl_via_wifi">via WiFi</string>
+    <string name="lbl_via_bluetooth">via Bluetooth</string>
+    <string name="lbl_scanning">Scanning for QR code…</string>
+    <string name="lbl_qr_instruction">Point camera at the QR code shown on your PC</string>
+    <string name="err_invalid_qr">Invalid QR code. Make sure you scan the PhoneBridge QR from your PC.</string>
+    <string name="notification_access_warning">Grant notification access for PhoneBridge to sync notifications</string>
+    <string name="grant_access">Grant Access</string>
+</resources>

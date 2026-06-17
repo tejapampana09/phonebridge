@@ -1,0 +1,20 @@
+{
+  "appId": "com.phonebridge.app",
+  "productName": "PhoneBridge",
+  "copyright": "Copyright © 2026",
+  "directories": {
+    "buildResources": "build",
+    "output": "dist"
+  },
+  "files": [
+    "dist-electron/**",
+    "out/**"
+  ],
+  "win": {
+    "target": [{"target": "dir", "arch": ["x64"]}]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
+}

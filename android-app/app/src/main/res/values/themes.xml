@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.PhoneBridge" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#1C1C1C</item>
+        <item name="android:navigationBarColor">#1C1C1C</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">#1C1C1C</item>
+        <item name="android:colorPrimary">#7B68EE</item>
+        <item name="android:colorPrimaryDark">#1C1C1C</item>
+        <item name="android:colorAccent">#7B68EE</item>
+    </style>
+</resources>

@@ -14,7 +14,8 @@ import {
   saveContacts,
   saveApps,
   dismissNotification,
-  saveCalendarEvents
+  saveCalendarEvents,
+  readData
 } from './database'
 import { emitToRenderer } from './ipc'
 import { showNotification, showCallNotification } from './notifications'

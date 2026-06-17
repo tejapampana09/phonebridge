@@ -25,6 +25,16 @@ import { isBluetoothAvailable, sendViaBluetooth, isBluetoothConnected, disconnec
 
 let mainWindow: BrowserWindow | null = null
 
+function sendMsgToPhone(payload: any): boolean {
+  if (getConnectedCount() > 0) {
+    sendToPhone(payload)
+    return true
+  } else if (isBluetoothAvailable()) {
+    return sendViaBluetooth(payload)
+  }
+  return false
+}
+
 export function setMainWindow(win: BrowserWindow): void {
   mainWindow = win
 }
@@ -342,13 +352,7 @@ export function registerIpcHandlers(): void {
       fileType: 'photo'
     }
     console.log(`[IPC] Requesting photo download for: ${id}`)
-    if (getConnectedCount() > 0) {
-      sendToPhone(payload)
-      return true
-    } else if (isBluetoothAvailable()) {
-      return sendViaBluetooth(payload)
-    }
-    return false
+    return sendMsgToPhone(payload)
   })
 
   // send-file-to-phone
@@ -372,11 +376,7 @@ export function registerIpcHandlers(): void {
         fileSize,
         totalChunks
       }
-      if (getConnectedCount() > 0) {
-        sendToPhone(startPayload)
-      } else if (isBluetoothAvailable()) {
-        sendViaBluetooth(startPayload)
-      }
+      sendMsgToPhone(startPayload)
 
       // Send chunks
       for (let i = 0; i < totalChunks; i++) {
@@ -391,11 +391,7 @@ export function registerIpcHandlers(): void {
           chunkIndex: i,
           data: dataBase64
         }
-        if (getConnectedCount() > 0) {
-          sendToPhone(chunkPayload)
-        } else if (isBluetoothAvailable()) {
-          sendViaBluetooth(chunkPayload)
-        }
+        sendMsgToPhone(chunkPayload)
 
         // Emit progress update to renderer
         emitToRenderer('phone-event', {
@@ -419,11 +415,7 @@ export function registerIpcHandlers(): void {
         type: 'FILE_TRANSFER_END',
         fileId
       }
-      if (getConnectedCount() > 0) {
-        sendToPhone(endPayload)
-      } else if (isBluetoothAvailable()) {
-        sendViaBluetooth(endPayload)
-      }
+      sendMsgToPhone(endPayload)
       
       emitToRenderer('phone-event', {
         type: 'FILE_TRANSFER_PROGRESS',
@@ -447,26 +439,12 @@ export function registerIpcHandlers(): void {
 
   // answer-call
   ipcMain.handle('answer-call', async () => {
-    const payload = { type: 'ANSWER_CALL' }
-    if (getConnectedCount() > 0) {
-      sendToPhone(payload)
-      return true
-    } else if (isBluetoothAvailable()) {
-      return sendViaBluetooth(payload)
-    }
-    return false
+    return sendMsgToPhone({ type: 'ANSWER_CALL' })
   })
 
   // reject-call
   ipcMain.handle('reject-call', async () => {
-    const payload = { type: 'REJECT_CALL' }
-    let success = false
-    if (getConnectedCount() > 0) {
-      sendToPhone(payload)
-      success = true
-    } else if (isBluetoothAvailable()) {
-      success = sendViaBluetooth(payload)
-    }
+    const success = sendMsgToPhone({ type: 'REJECT_CALL' })
     // Immediately close the incoming call modal on PC without waiting for Android confirmation
     emitToRenderer('phone-event', { type: 'CALL_UPDATE', data: { status: 'ended' } })
     return success
@@ -474,20 +452,11 @@ export function registerIpcHandlers(): void {
 
   // 6. Request Sync
   ipcMain.handle('request-sync', async () => {
-    const payload = {
+    console.log('[IPC] Requesting sync')
+    return sendMsgToPhone({
       type: 'REQUEST_SYNC',
       what: 'all'
-    }
-    console.log('[IPC] Requesting sync')
-    
-    let success = false
-    if (getConnectedCount() > 0) {
-      sendToPhone(payload)
-      success = true
-    } else if (isBluetoothAvailable()) {
-      success = sendViaBluetooth(payload)
-    }
-    return success
+    })
   })
 
   // search-sms handler
@@ -504,58 +473,49 @@ export function registerIpcHandlers(): void {
   // delete-sms-message handler
   ipcMain.handle('delete-sms-message', async (_, id: string) => {
     deleteSmsMessage(id)
-    sendToPhone({ type: 'DELETE_SMS', msgId: id })
-    return true
+    return sendMsgToPhone({ type: 'DELETE_SMS', msgId: id })
   })
 
   // create-contact handler
   ipcMain.handle('create-contact', async (_, { name, number }) => {
-    sendToPhone({ type: 'CREATE_CONTACT', name, number })
-    return true
+    return sendMsgToPhone({ type: 'CREATE_CONTACT', name, number })
   })
 
   // update-contact handler
   ipcMain.handle('update-contact', async (_, { contactId, name, number }) => {
-    sendToPhone({ type: 'UPDATE_CONTACT', contactId, name, number })
-    return true
+    return sendMsgToPhone({ type: 'UPDATE_CONTACT', contactId, name, number })
   })
 
   // delete-contact handler
   ipcMain.handle('delete-contact', async (_, contactId: string) => {
     deleteContact(contactId)
-    sendToPhone({ type: 'DELETE_CONTACT', contactId })
-    return true
+    return sendMsgToPhone({ type: 'DELETE_CONTACT', contactId })
   })
 
   // list-phone-files handler
   ipcMain.handle('list-phone-files', async (_, path: string) => {
-    sendToPhone({ type: 'LIST_FILES', path })
-    return true
+    return sendMsgToPhone({ type: 'LIST_FILES', path })
   })
 
   // download-phone-file handler
   ipcMain.handle('download-phone-file', async (_, filePath: string) => {
-    sendToPhone({ type: 'REQUEST_FILE_PATH', filePath })
-    return true
+    return sendMsgToPhone({ type: 'REQUEST_FILE_PATH', filePath })
   })
 
   // delete-phone-file handler
   ipcMain.handle('delete-phone-file', async (_, filePath: string) => {
-    sendToPhone({ type: 'DELETE_FILE', filePath })
-    return true
+    return sendMsgToPhone({ type: 'DELETE_FILE', filePath })
   })
 
   // rename-phone-file handler
   ipcMain.handle('rename-phone-file', async (_, { filePath, newName }) => {
-    sendToPhone({ type: 'RENAME_FILE', filePath, newName })
-    return true
+    return sendMsgToPhone({ type: 'RENAME_FILE', filePath, newName })
   })
 
   // delete-photo handler
   ipcMain.handle('delete-photo', async (_, id: string) => {
     deletePhoto(id)
-    sendToPhone({ type: 'DELETE_PHOTO', fileId: id })
-    return true
+    return sendMsgToPhone({ type: 'DELETE_PHOTO', fileId: id })
   })
 
   // get-calendar-events handler
@@ -565,50 +525,42 @@ export function registerIpcHandlers(): void {
 
   // create-calendar-event handler
   ipcMain.handle('create-calendar-event', async (_, { title, description, start, end, location }) => {
-    sendToPhone({ type: 'CREATE_EVENT', title, description, start, end, location })
-    return true
+    return sendMsgToPhone({ type: 'CREATE_EVENT', title, description, start, end, location })
   })
 
   // delete-calendar-event handler
   ipcMain.handle('delete-calendar-event', async (_, eventId: string) => {
-    sendToPhone({ type: 'DELETE_EVENT', eventId })
-    return true
+    return sendMsgToPhone({ type: 'DELETE_EVENT', eventId })
   })
 
   // toggle-flashlight
   ipcMain.handle('toggle-flashlight', async (_, enabled: boolean) => {
-    sendToPhone({ type: 'TOGGLE_FLASHLIGHT', enabled })
-    return true
+    return sendMsgToPhone({ type: 'TOGGLE_FLASHLIGHT', enabled })
   })
 
   // ring-phone
   ipcMain.handle('ring-phone', async () => {
-    sendToPhone({ type: 'RING_PHONE' })
-    return true
+    return sendMsgToPhone({ type: 'RING_PHONE' })
   })
 
   // stop-ringing
   ipcMain.handle('stop-ringing', async () => {
-    sendToPhone({ type: 'STOP_RINGING' })
-    return true
+    return sendMsgToPhone({ type: 'STOP_RINGING' })
   })
 
   // locate-device
   ipcMain.handle('locate-device', async () => {
-    sendToPhone({ type: 'LOCATE_DEVICE' })
-    return true
+    return sendMsgToPhone({ type: 'LOCATE_DEVICE' })
   })
 
   // start-mirroring
   ipcMain.handle('start-mirroring', async () => {
-    sendToPhone({ type: 'START_MIRRORING' })
-    return true
+    return sendMsgToPhone({ type: 'START_MIRRORING' })
   })
 
   // stop-mirroring
   ipcMain.handle('stop-mirroring', async () => {
-    sendToPhone({ type: 'STOP_MIRRORING' })
-    return true
+    return sendMsgToPhone({ type: 'STOP_MIRRORING' })
   })
 
   // check-for-updates

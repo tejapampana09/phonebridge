@@ -121,45 +121,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Status Bar Indicators (Battery, WiFi, Signal) */}
+        {/* Status Bar Indicators & Actions Container */}
         {isConnected && (
-          <div className="grid grid-cols-3 gap-2 bg-primary/40 p-2.5 rounded-lg border border-border/60 text-xs">
-            
-            {/* Battery */}
-            <div className="flex flex-col items-center justify-center space-y-1 text-secondary">
-              <div className="flex items-center space-x-1">
-                {isCharging ? (
-                  <BatteryCharging size={14} className="text-success" />
-                ) : (
-                  <Battery size={14} className={batteryPercent < 20 ? 'text-danger' : 'text-secondary'} />
-                )}
-                <span className="font-semibold">{batteryPercent}%</span>
+          <div className="bg-primary/40 p-2.5 rounded-lg border border-border/60 text-xs">
+            {/* Status Bar Indicators (Battery, WiFi, Signal) */}
+            <div className="grid grid-cols-3 gap-2">
+              
+              {/* Battery */}
+              <div className="flex flex-col items-center justify-center space-y-1 text-secondary">
+                <div className="flex items-center space-x-1">
+                  {isCharging ? (
+                    <BatteryCharging size={14} className="text-success" />
+                  ) : (
+                    <Battery size={14} className={batteryPercent < 20 ? 'text-danger' : 'text-secondary'} />
+                  )}
+                  <span className="font-semibold">{batteryPercent}%</span>
+                </div>
+                <span className="text-[10px] text-dim font-medium">Battery</span>
               </div>
-              <span className="text-[10px] text-dim font-medium">Battery</span>
-            </div>
 
-            {/* Network / WiFi */}
-            <div className="flex flex-col items-center justify-center space-y-1 text-secondary">
-              <div className="flex items-center space-x-1">
-                {networkType === 'offline' ? (
-                  <WifiOff size={14} className="text-danger" />
-                ) : (
-                  <Wifi size={14} className="text-accent" />
-                )}
-                <span className="font-semibold capitalize truncate max-w-[40px] text-[10px]">
-                  {networkType}
-                </span>
+              {/* Network / WiFi */}
+              <div className="flex flex-col items-center justify-center space-y-1 text-secondary">
+                <div className="flex items-center space-x-1">
+                  {networkType === 'offline' ? (
+                    <WifiOff size={14} className="text-danger" />
+                  ) : (
+                    <Wifi size={14} className="text-accent" />
+                  )}
+                  <span className="font-semibold capitalize truncate max-w-[40px] text-[10px]">
+                    {networkType}
+                  </span>
+                </div>
+                <span className="text-[10px] text-dim font-medium">Network</span>
               </div>
-              <span className="text-[10px] text-dim font-medium">Network</span>
-            </div>
 
-            {/* Signal */}
-            <div className="flex flex-col items-center justify-center space-y-1 text-secondary">
-              <div className="flex items-center space-x-1">
-                <Signal size={14} className={signalLevel > 0 ? 'text-accent' : 'text-dim'} />
-                <span className="font-semibold">{signalLevel}/4</span>
+              {/* Signal */}
+              <div className="flex flex-col items-center justify-center space-y-1 text-secondary">
+                <div className="flex items-center space-x-1">
+                  <Signal size={14} className={signalLevel > 0 ? 'text-accent' : 'text-dim'} />
+                  <span className="font-semibold">{signalLevel}/4</span>
+                </div>
+                <span className="text-[10px] text-dim font-medium">Signal</span>
               </div>
-              <span className="text-[10px] text-dim font-medium">Signal</span>
+
             </div>
 
             {/* Device Actions Panel */}
@@ -249,7 +253,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               )}
             </div>
-
           </div>
         )}
 

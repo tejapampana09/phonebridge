@@ -34,7 +34,6 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({
   const [location, setLocation] = useState('')
   const [startDateStr, setStartDateStr] = useState('')
   const [startTimeStr, setStartTimeStr] = useState('')
-  const [endDateStr, setEndTimeStr] = useState('') // Note: we'll use local state for end date
   const [endDateValueStr, setEndDateValueStr] = useState('')
   const [endTimeValueStr, setEndTimeValueStr] = useState('')
   const [errorMsg, setErrorMsg] = useState('')

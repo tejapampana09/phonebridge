@@ -4,6 +4,7 @@ import { Search, User, Phone, X, Trash2 } from 'lucide-react'
 
 interface ContactsTabProps {
   contacts: ContactRecord[]
+  onRefreshContacts?: () => void
 }
 
 const WhatsAppIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -18,7 +19,7 @@ const InstagramIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 )
 
-export const ContactsTab: React.FC<ContactsTabProps> = ({ contacts }) => {
+export const ContactsTab: React.FC<ContactsTabProps> = ({ contacts, onRefreshContacts }) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedContact, setSelectedContact] = useState<ContactRecord | null>(null)
   const [showFormModal, setShowFormModal] = useState(false)
@@ -41,6 +42,7 @@ export const ContactsTab: React.FC<ContactsTabProps> = ({ contacts }) => {
       setFormName('')
       setFormNumber('')
       setEditingContact(null)
+      onRefreshContacts?.()
     } catch (err) {
       console.error(err)
       alert('Failed to save contact.')
@@ -281,6 +283,8 @@ export const ContactsTab: React.FC<ContactsTabProps> = ({ contacts }) => {
                   if (confirm(`Are you sure you want to delete ${selectedContact.name}?`)) {
                     try {
                       await window.api.deleteContact(selectedContact.id)
+                      onRefreshContacts?.()
+                      setSelectedContact(null)
                     } catch (err) {
                       console.error(err)
                     }

@@ -34,6 +34,28 @@ function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [showMirroring, setShowMirroring] = useState(false)
   const [openAtLogin, setOpenAtLogin] = useState(false)
+  const [isHfpConnected, setIsHfpConnected] = useState(false)
+
+  const checkHfpStatus = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const hasHfp = devices.some(d => 
+        (d.kind === 'audioinput' || d.kind === 'audiooutput') && 
+        (d.label.toLowerCase().includes('hands-free') || 
+         d.label.toLowerCase().includes('handsfree') ||
+         d.label.toLowerCase().includes('bluetooth'))
+      )
+      setIsHfpConnected(hasHfp)
+    } catch (err) {
+      console.error('Failed to query audio devices:', err)
+    }
+  }
+
+  useEffect(() => {
+    checkHfpStatus()
+    const interval = setInterval(checkHfpStatus, 4000)
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -61,7 +83,8 @@ function App() {
     fetchNotifications,
     fetchCalls,
     fetchSmsThreads,
-    fetchCalendarEvents
+    fetchCalendarEvents,
+    fetchContacts
   } = useDatabase()
 
   const checkConnection = async () => {
@@ -368,7 +391,7 @@ function App() {
             {/* Active Tab Viewport */}
             <div className="flex-1 overflow-hidden relative">
               {activeTab === 'calls' && <CallsTab calls={calls} contacts={contacts} />}
-              {activeTab === 'contacts' && <ContactsTab contacts={contacts} />}
+              {activeTab === 'contacts' && <ContactsTab contacts={contacts} onRefreshContacts={fetchContacts} />}
               {activeTab === 'messages' && (
                 <MessagesTab threads={smsThreads} refreshThreads={fetchSmsThreads} />
               )}
@@ -434,6 +457,38 @@ function App() {
                   }}
                   className="w-4 h-4 rounded text-accent focus:ring-accent accent-accent cursor-pointer"
                 />
+              </div>
+
+              {/* Call Audio Settings */}
+              <div className="flex flex-col p-3.5 bg-primary/30 border border-border/60 rounded-xl space-y-3">
+                <div>
+                  <h4 className="text-xs font-bold text-white">Call Audio Setup (Bluetooth)</h4>
+                  <p className="text-[10px] text-dim mt-0.5">
+                    Call audio routing requires your phone to be paired with Windows Bluetooth.
+                  </p>
+                </div>
+                
+                <div className="flex items-center justify-between text-[10px] bg-card p-2 rounded-lg border border-border/60">
+                  <span className="text-secondary font-medium">HFP Call Audio Device Status:</span>
+                  <span className={`font-bold ${isHfpConnected ? 'text-success' : 'text-warning'}`}>
+                    {isHfpConnected ? 'Connected & Ready' : 'Not Connected'}
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => {
+                    alert(
+                      "To route phone call audio through your PC:\n\n" +
+                      "1. Open Windows Settings -> Bluetooth & devices.\n" +
+                      "2. Click 'Add device' and pair your Android phone via Bluetooth.\n" +
+                      "3. Once paired, click the three dots next to your phone, select 'Properties' (or 'More Bluetooth settings'), and ensure 'Handsfree telephony' (HFP) service is enabled.\n" +
+                      "4. Your phone call audio and microphone will then automatically route through your default PC speaker & mic."
+                    )
+                  }}
+                  className="w-full text-center py-2 bg-card border border-border hover:bg-hover text-accent font-bold rounded-lg text-[10px] transition-all"
+                >
+                  View Bluetooth Call Setup Guide
+                </button>
               </div>
 
               <div className="flex items-center justify-between p-3.5 bg-primary/30 border border-border/60 rounded-xl">

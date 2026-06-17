@@ -70,6 +70,11 @@ class CallReceiver : BroadcastReceiver() {
                         ConnectionManager.send(updateJson.toString())
                         Log.d(TAG, "Sent CALL_UPDATE status: answered")
                     }
+                    try {
+                        PhoneLinkService.startCallAudioRouting()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to start call audio routing", e)
+                    }
                 }
                 TelephonyManager.EXTRA_STATE_IDLE -> {
                     // Call ended / declined
@@ -84,6 +89,11 @@ class CallReceiver : BroadcastReceiver() {
                     if (ConnectionManager.isConnected()) {
                         ConnectionManager.send(updateJson.toString())
                         Log.d(TAG, "Sent CALL_UPDATE status: ended with number: ${lastCall?.number ?: ""}")
+                    }
+                    try {
+                        PhoneLinkService.stopCallAudioRouting()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to stop call audio routing", e)
                     }
                 }
             }

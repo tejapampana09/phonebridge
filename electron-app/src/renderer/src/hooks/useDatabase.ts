@@ -169,7 +169,7 @@ export function useDatabase() {
       window.api.removePhoneEventListener(phoneSubscription)
       window.api.removeConnectionChangedListener(connectionSubscription)
     }
-  }, [refreshAll, fetchNotifications, fetchCalls, fetchSmsThreads, fetchPhotos, fetchDeviceStatus, fetchContacts, fetchApps])
+  }, [refreshAll, fetchNotifications, fetchCalls, fetchSmsThreads, fetchPhotos, fetchDeviceStatus, fetchContacts, fetchApps, fetchCalendarEvents])
 
   return {
     notifications,

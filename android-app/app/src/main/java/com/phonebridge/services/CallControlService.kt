@@ -70,14 +70,16 @@ object CallControlService {
 
             // Fallback for pre-API-28
             try {
-                val intent = android.content.Intent(android.content.Intent.ACTION_ANSWER).apply {
-                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                context.startActivity(intent)
-                Log.i(TAG, "[CALL] Reject success")
+                val telephonyService = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+                val getITelephony = telephonyService.javaClass.getDeclaredMethod("getITelephony")
+                getITelephony.isAccessible = true
+                val iTelephony = getITelephony.invoke(telephonyService)
+                val endCall = iTelephony.javaClass.getDeclaredMethod("endCall")
+                endCall.invoke(iTelephony)
+                Log.i(TAG, "[CALL] Reject fallback success")
                 return true
             } catch (e2: Exception) {
-                Log.e(TAG, "ACTION_ANSWER fallback failed", e2)
+                Log.e(TAG, "ITelephony reflection fallback failed", e2)
             }
             return false
         } catch (e: Exception) {

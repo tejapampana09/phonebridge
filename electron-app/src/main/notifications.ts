@@ -62,6 +62,3 @@ export function showCallNotification(name: string, number: string): void {
   }
 }
 
-export function showAppNotification(title: string, message: string): void {
-  showNotification(appName, title, message)
-}

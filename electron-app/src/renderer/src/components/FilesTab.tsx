@@ -190,6 +190,7 @@ export const FilesTab: React.FC = () => {
     try {
       await window.api.renamePhoneFile(renamingPath, newNameInput.trim())
       setShowRenameModal(false)
+      fetchDirectory(currentPath)
     } catch (err) {
       console.error(err)
       alert('Failed to rename file.')
@@ -347,6 +348,7 @@ export const FilesTab: React.FC = () => {
                         if (confirm(`Delete ${entry.name}?`)) {
                           try {
                             await window.api.deletePhoneFile(entry.path)
+                            fetchDirectory(currentPath)
                           } catch (err) {
                             console.error(err)
                           }

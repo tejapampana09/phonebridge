@@ -130,7 +130,7 @@ export function useDatabase() {
       console.log('[useDatabase] Real-time phone event received:', payload)
       const { type } = payload
 
-      if (type === 'NOTIFICATION') {
+      if (type === 'NOTIFICATION' || type === 'NOTIFICATION_REMOVED') {
         fetchNotifications()
       } else if (type === 'CALL_HISTORY' || type === 'CALL_UPDATE') {
         fetchCalls()

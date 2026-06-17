@@ -121,13 +121,45 @@ class PhoneNotificationService : NotificationListenerService() {
 
         try {
             val extras = sbn.notification.extras
-            val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
-            // EXTRA_BIG_TEXT contains the full message for expanded styles (WhatsApp, Gmail, etc.)
-            val text = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
-                ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+            var title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
             
+            // Extract text with fallback options
+            var text = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+                ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+
+            // Fallback 1: Try EXTRA_MESSAGES for MessagingStyle (WhatsApp, Google Messages, Telegram, etc.)
+            if (text.isBlank()) {
+                val messages = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
+                if (messages != null && messages.isNotEmpty()) {
+                    // Extract text from the last message
+                    val lastMessage = messages[messages.size - 1] as? android.os.Bundle
+                    if (lastMessage != null) {
+                        text = lastMessage.getCharSequence("text")?.toString() ?: ""
+                        if (title.isBlank()) {
+                            val senderBundle = lastMessage.getBundle("sender_person")
+                            if (senderBundle != null) {
+                                title = senderBundle.getString("name") ?: ""
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fallback 2: Try EXTRA_TEXT_LINES (InboxStyle notifications like Gmail)
+            if (text.isBlank()) {
+                val lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+                if (lines != null && lines.isNotEmpty()) {
+                    text = lines.joinToString("\n") { it.toString() }
+                }
+            }
+
+            // Fallback 3: Try EXTRA_SUB_TEXT
+            if (text.isBlank()) {
+                text = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString() ?: ""
+            }
+
             // Skip empty notifications or group summaries
-            if (title.isEmpty() && text.isEmpty()) return
+            if (title.isBlank() && text.isBlank()) return
             if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
 
             // Dedup check: skip if we already sent this exact title+text for this key

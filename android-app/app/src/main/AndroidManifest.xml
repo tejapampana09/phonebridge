@@ -110,7 +110,7 @@
         <!-- Call receiver -->
         <receiver
             android:name=".services.CallReceiver"
-            android:exported="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.PHONE_STATE" />
             </intent-filter>
@@ -129,7 +129,7 @@
         <!-- Outgoing call receiver: captures dialed number before OFFHOOK -->
         <receiver
             android:name=".services.OutgoingCallReceiver"
-            android:exported="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
             </intent-filter>

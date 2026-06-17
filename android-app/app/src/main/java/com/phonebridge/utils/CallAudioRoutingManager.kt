@@ -66,8 +66,9 @@ class CallAudioRoutingManager(private val context: Context) {
     fun startScoRouting() {
         try {
             Log.i(TAG, "Requesting SCO audio routing")
-            audioManager.isBluetoothScoOn = true
+            audioManager.mode = AudioManager.MODE_IN_CALL
             audioManager.startBluetoothSco()
+            audioManager.isBluetoothScoOn = true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start SCO routing", e)
         }
@@ -76,8 +77,9 @@ class CallAudioRoutingManager(private val context: Context) {
     fun stopScoRouting() {
         try {
             Log.i(TAG, "Stopping SCO audio routing")
-            audioManager.stopBluetoothSco()
             audioManager.isBluetoothScoOn = false
+            audioManager.stopBluetoothSco()
+            audioManager.mode = AudioManager.MODE_NORMAL
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop SCO routing", e)
         }

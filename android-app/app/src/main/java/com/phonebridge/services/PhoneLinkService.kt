@@ -85,6 +85,9 @@ class PhoneLinkService : Service() {
         ConnectionManager.init(this)
         ConnectionManager.connect()
         startHeartbeat()
+
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.addPrimaryClipChangedListener(clipboardListener)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -101,11 +104,35 @@ class PhoneLinkService : Service() {
         instance = null
         heartbeatJob?.cancel()
         serviceScope.cancel()
+        try {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.removePrimaryClipChangedListener(clipboardListener)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to remove clipboard listener", e)
+        }
+        MessageHandler.cancelSync()
         ConnectionManager.disconnect()
         Log.i(TAG, "Service destroyed")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Clipboard sync
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private val clipboardListener = android.content.ClipboardManager.OnPrimaryClipChangedListener {
+        val text = com.phonebridge.sync.ClipboardSync.getCurrentClipboard(this)
+        if (!text.isNullOrBlank()) {
+            val clipJson = org.json.JSONObject().apply {
+                put("type", "CLIPBOARD_CHANGED")
+                put("text", text)
+            }
+            if (ConnectionManager.isConnected()) {
+                ConnectionManager.send(clipJson.toString())
+            }
+        }
+    }
 
     // ──────────────────────────────────────────────────────────────────────────
     // Heartbeat

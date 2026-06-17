@@ -10,6 +10,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
   const [photoData, setPhotoData] = useState<Record<string, string>>({})
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set())
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null)
+  const pendingOpenIdRef = React.useRef<string | null>(null)
 
   // Format file size
   const formatSize = (bytes: number) => {
@@ -58,6 +59,13 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
           const data = await window.api.getPhotoData(id)
           if (data) {
             setPhotoData((prev) => ({ ...prev, [id]: data }))
+            if (pendingOpenIdRef.current === id) {
+              const idx = photos.findIndex((p) => p.id === id)
+              if (idx !== -1) {
+                setSelectedPhotoIndex(idx)
+              }
+              pendingOpenIdRef.current = null
+            }
           }
           setDownloadingIds((prev) => {
             const next = new Set(prev)
@@ -73,7 +81,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
     return () => {
       window.api.removePhoneEventListener(subscription)
     }
-  }, [])
+  }, [photos])
 
   const handleDownload = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -103,9 +111,38 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
     }
   }
 
-  const handleCardClick = (index: number, id: string) => {
+  const handleCardClick = async (index: number, id: string) => {
     if (photoData[id]) {
       setSelectedPhotoIndex(index)
+    } else {
+      if (downloadingIds.has(id)) return
+      pendingOpenIdRef.current = id
+      setDownloadingIds((prev) => {
+        const next = new Set(prev)
+        next.add(id)
+        return next
+      })
+
+      try {
+        const success = await window.api.downloadPhoto(id)
+        if (!success) {
+          alert('Failed to request photo download. Ensure your phone is connected.')
+          setDownloadingIds((prev) => {
+            const next = new Set(prev)
+            next.delete(id)
+            return next
+          })
+          pendingOpenIdRef.current = null
+        }
+      } catch (err) {
+        console.error('Failed to trigger downloadPhoto IPC:', err)
+        setDownloadingIds((prev) => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+        pendingOpenIdRef.current = null
+      }
     }
   }
 
@@ -175,6 +212,23 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
                         alt={photo.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
+                    ) : photo.thumbnail ? (
+                      <div className="w-full h-full relative">
+                        <img
+                          src={photo.thumbnail}
+                          alt={photo.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 blur-[0.5px]"
+                        />
+                        {isDownloading ? (
+                          <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center">
+                            <Loader2 className="animate-spin text-accent" size={28} />
+                          </div>
+                        ) : (
+                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <Download size={20} className="text-white drop-shadow-md animate-bounce" />
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <>
                         <Image size={36} className="text-dim group-hover:text-accent/60 transition-colors" />

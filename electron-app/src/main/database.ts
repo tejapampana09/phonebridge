@@ -14,6 +14,7 @@ export interface NotificationRecord {
   timestamp: string
   icon?: string
   dismissed?: boolean
+  replyable?: boolean
 }
 
 export interface CallRecord {
@@ -32,6 +33,7 @@ export interface SmsThreadRecord {
   lastMessage: string
   timestamp: string
   messages?: SmsMessageRecord[]
+  unread?: boolean
 }
 
 export interface SmsMessageRecord {
@@ -49,6 +51,7 @@ export interface PhotoRecord {
   name: string
   size: number
   timestamp: string
+  thumbnail?: string
 }
 
 export interface DeviceStatusRecord {
@@ -99,21 +102,27 @@ const initialData: DatabaseSchema = {
   apps: []
 }
 
+let dbCache: DatabaseSchema | null = null
+
 // Helper: read data from JSON file
 function readData(): DatabaseSchema {
+  if (dbCache) return dbCache
   try {
     if (fs.existsSync(dbPath)) {
       const content = fs.readFileSync(dbPath, 'utf8')
-      return JSON.parse(content)
+      dbCache = JSON.parse(content)
+      return dbCache!
     }
   } catch (err) {
     console.error('[DB] Error reading database file:', err)
   }
-  return { ...initialData }
+  dbCache = JSON.parse(JSON.stringify(initialData))
+  return dbCache!
 }
 
 // Helper: write data atomically
 function writeData(data: DatabaseSchema): void {
+  dbCache = data
   try {
     fs.writeFileSync(tempDbPath, JSON.stringify(data, null, 2), 'utf8')
     fs.renameSync(tempDbPath, dbPath)
@@ -159,7 +168,8 @@ export function saveNotification(notif: NotificationRecord): void {
     message: notif.message,
     timestamp: notif.timestamp,
     icon: notif.icon || undefined,
-    dismissed: false
+    dismissed: false,
+    replyable: notif.replyable ?? false
   }
 
   if (idx !== -1) {
@@ -219,7 +229,8 @@ export function saveSmses(payload: { threads: SmsThreadRecord[] }): void {
       address: thread.address,
       name: thread.name,
       lastMessage: thread.lastMessage,
-      timestamp: thread.timestamp
+      timestamp: thread.timestamp,
+      unread: thread.unread ?? false
     }
     if (tIdx !== -1) {
       data.sms_threads[tIdx] = newThread
@@ -264,16 +275,32 @@ export function getSmsMessages(threadId: string): SmsMessageRecord[] {
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
 }
 
+export function markThreadRead(threadId: string): void {
+  const data = readData()
+  const idx = data.sms_threads.findIndex((t) => t.id === threadId)
+  if (idx !== -1) {
+    data.sms_threads[idx].unread = false
+    writeData(data)
+  }
+}
+
 // ─── Photos ──────────────────────────────────────────────────────────────────
 
 export function savePhotos(photos: PhotoRecord[]): void {
   const data = readData()
   for (const photo of photos) {
     const idx = data.photos.findIndex((p) => p.id === photo.id)
+    const newPhoto: PhotoRecord = {
+      id: photo.id,
+      name: photo.name,
+      size: photo.size,
+      timestamp: photo.timestamp,
+      thumbnail: photo.thumbnail || undefined
+    }
     if (idx !== -1) {
-      data.photos[idx] = photo
+      data.photos[idx] = newPhoto
     } else {
-      data.photos.push(photo)
+      data.photos.push(newPhoto)
     }
   }
   writeData(data)
@@ -346,4 +373,9 @@ export function saveApps(apps: AppRecord[]): void {
 export function getApps(): AppRecord[] {
   const data = readData()
   return data.apps || []
+}
+
+export function clearAllData(): void {
+  dbCache = JSON.parse(JSON.stringify(initialData))
+  writeData(dbCache!)
 }

@@ -96,3 +96,19 @@ export function sendViaBluetooth(msg: object): boolean {
     return false
   }
 }
+
+export function isBluetoothConnected(): boolean {
+  return connectedSocket !== null
+}
+
+export function disconnectBluetoothClient(): void {
+  if (connectedSocket) {
+    try {
+      sendViaBluetooth({ type: 'UNLINK' })
+      connectedSocket = null
+      console.log('[BT] Client unlinked and socket cleared.')
+    } catch (err) {
+      console.error('[BT] Error sending UNLINK to Bluetooth client:', err)
+    }
+  }
+}

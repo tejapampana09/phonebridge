@@ -5,7 +5,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase } from './database'
 import { startWebSocketServer } from './server'
 import { startBluetoothServer } from './bluetooth'
-import { registerIpcHandlers, setMainWindow } from './ipc'
+import { registerIpcHandlers, setMainWindow, getSettings } from './ipc'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -170,8 +170,9 @@ if (!gotTheLock) {
     // Create main window
     createWindow()
 
-    // Set login item settings (disabled by default)
-    app.setLoginItemSettings({ openAtLogin: false })
+    // Set login item settings (persisted)
+    const settings = getSettings()
+    app.setLoginItemSettings({ openAtLogin: settings.openAtLogin ?? false })
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

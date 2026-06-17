@@ -56,7 +56,8 @@ export const AppsTab: React.FC<AppsTabProps> = ({ apps }) => {
               return (
                 <div
                   key={app.package}
-                  className="group bg-sidebar border border-border/70 hover:border-accent/40 rounded-xl p-4 flex flex-col items-center text-center space-y-3 shadow-md hover:shadow-xl hover:bg-hover transition-all duration-200 transform hover:-translate-y-1 relative"
+                  onClick={() => window.api.launchApp(app.package)}
+                  className="group bg-sidebar border border-border/70 hover:border-accent/40 rounded-xl p-4 flex flex-col items-center text-center space-y-3 shadow-md hover:shadow-xl hover:bg-hover transition-all duration-200 transform hover:-translate-y-1 relative cursor-pointer"
                   title={`${app.name} (${app.package})`}
                 >
                   {/* App Icon Container */}

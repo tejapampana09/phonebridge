@@ -7,6 +7,7 @@ export interface PhoneNotification {
   timestamp: string
   icon?: string // Base64 jpeg representation
   dismissed?: boolean
+  replyable?: boolean
 }
 
 export interface CallRecord {
@@ -35,6 +36,7 @@ export interface SmsThread {
   lastMessage: string
   timestamp: string
   messages?: SmsMessage[]
+  unread?: boolean
 }
 
 export interface PhotoMeta {
@@ -42,6 +44,7 @@ export interface PhotoMeta {
   name: string
   size: number
   timestamp: string
+  thumbnail?: string
 }
 
 export interface ContactRecord {

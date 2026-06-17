@@ -21,6 +21,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
 
 private const val TAG = "MessageHandler"
 
@@ -38,6 +40,7 @@ object MsgType {
     const val PHOTO_METADATA = "PHOTO_METADATA"
     const val DEVICE_STATUS  = "DEVICE_STATUS"
     const val PONG           = "PONG"
+    const val CLIPBOARD_CHANGED = "CLIPBOARD_CHANGED"
 
     // PC → Phone
     const val PING                 = "PING"
@@ -53,6 +56,9 @@ object MsgType {
     const val FILE_TRANSFER_START  = "FILE_TRANSFER_START"
     const val FILE_TRANSFER_CHUNK  = "FILE_TRANSFER_CHUNK"
     const val FILE_TRANSFER_END    = "FILE_TRANSFER_END"
+    const val LAUNCH_APP           = "LAUNCH_APP"
+    const val SET_CLIPBOARD        = "SET_CLIPBOARD"
+    const val UNLINK               = "UNLINK"
 }
 
 /**
@@ -78,12 +84,14 @@ object MessageHandler {
                     if (body.isEmpty()) {
                         body = json.optString("message")
                     }
-                    if (to.isNotBlank() && body.isNotBlank()) sendSms(to, body)
+                    if (to.isNotBlank() && body.isNotBlank()) sendSms(context, to, body)
                 }
                 MsgType.DISMISS_NOTIFICATION -> {
-                    val notifId  = json.optInt("notif_id", -1)
-                    val pkg      = json.optString("package")
-                    dismissNotification(context, notifId, pkg)
+                    val id = json.optString("id")
+                    if (id.isNotBlank()) {
+                        val success = com.phonebridge.services.PhoneNotificationService.cancelByKey(id)
+                        Log.i(TAG, "Dismiss notification $id: success=$success")
+                    }
                 }
                 MsgType.REQUEST_SYNC -> {
                     triggerSync(context)
@@ -125,7 +133,7 @@ object MessageHandler {
                     com.phonebridge.utils.FileTransferManager.handleIncomingEnd(json)
                 }
                 MsgType.CONNECT_ACK -> {
-                    val pcName = json.optString("pc_name", "PC")
+                    val pcName = json.optString("pcName", "PC")
                     PairingManager.savePcName(pcName)
                     Log.i(TAG, "CONNECT_ACK from $pcName")
                     // Trigger sync on connect acknowledgement
@@ -133,6 +141,31 @@ object MessageHandler {
                     // Broadcast to update UI
                     val intent = Intent(ACTION_CONNECTED).putExtra(EXTRA_PC_NAME, pcName)
                     context.sendBroadcast(intent)
+                }
+                MsgType.LAUNCH_APP -> {
+                    val packageName = json.optString("package")
+                    if (packageName.isNotBlank()) {
+                        val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
+                        if (launchIntent != null) {
+                            launchIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            context.startActivity(launchIntent)
+                        }
+                    }
+                }
+                MsgType.SET_CLIPBOARD -> {
+                    val text = json.optString("text")
+                    if (text.isNotBlank()) {
+                        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+                        handler.post {
+                            com.phonebridge.sync.ClipboardSync.setClipboard(context, text)
+                        }
+                    }
+                }
+                MsgType.UNLINK -> {
+                    Log.i(TAG, "Unlink command received from PC")
+                    com.phonebridge.pairing.PairingManager.clear()
+                    com.phonebridge.connection.ConnectionManager.disconnect()
+                    com.phonebridge.services.PhoneLinkService.stop(context)
                 }
                 else -> Log.w(TAG, "Unknown message type: $type")
             }
@@ -148,9 +181,14 @@ object MessageHandler {
     // Actions on incoming commands
     // ──────────────────────────────────────────────────────────────────────────
 
-    private fun sendSms(to: String, body: String) {
+    private fun sendSms(context: Context, to: String, body: String) {
         try {
-            val smsManager = SmsManager.getDefault()
+            val smsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                context.getSystemService(android.telephony.SmsManager::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                android.telephony.SmsManager.getDefault()
+            }
             val parts      = smsManager.divideMessage(body)
             if (parts.size == 1) {
                 smsManager.sendTextMessage(to, null, body, null, null)
@@ -176,20 +214,20 @@ object MessageHandler {
         }
     }
 
-    private fun dismissNotification(context: Context, notifId: Int, pkg: String) {
+    private val syncScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    fun cancelSync() {
         try {
-            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE)
-                    as android.app.NotificationManager
-            nm.cancel(pkg, notifId)
+            syncScope.coroutineContext.cancelChildren()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to dismiss notification $notifId from $pkg", e)
+            Log.e(TAG, "Failed to cancel syncScope children", e)
         }
     }
 
     fun triggerSync(context: Context) {
         try {
             ConnectionManager.send(com.phonebridge.sync.CallLogSync.getLastNCalls(context))
-            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            syncScope.launch {
                 delay(200)
                 ConnectionManager.send(com.phonebridge.sync.SmsSync.getLastNThreads(context))
                 delay(200)
@@ -229,9 +267,21 @@ object MessageHandler {
         val charging = (batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1) ==
                 BatteryManager.BATTERY_STATUS_CHARGING
 
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE)
-                as android.net.ConnectivityManager
-        val networkType = cm.activeNetworkInfo?.typeName ?: "none"
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        val networkType = when {
+            caps == null -> "offline"
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "WiFi"
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "Mobile"
+            else -> "offline"
+        }
+
+        val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+        val signal = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            telephonyManager.signalStrength?.level ?: 0
+        } else {
+            0
+        }
 
         val deviceName = android.os.Build.MODEL
 
@@ -240,7 +290,8 @@ object MessageHandler {
             .put("battery",     batteryPct)
             .put("charging",    charging)
             .put("network",     networkType)
-            .put("device_name", deviceName)
+            .put("signal",      signal)
+            .put("deviceName",  deviceName)
             .put("ts",          System.currentTimeMillis())
             .toString()
     }

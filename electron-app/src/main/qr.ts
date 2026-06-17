@@ -55,8 +55,8 @@ export async function generateQR(): Promise<string> {
       margin: 2,
       width: 280,
       color: {
-        dark: '#FFFFFF',
-        light: '#1C1C1C'
+        dark: '#1C1C1C',
+        light: '#FFFFFF'
       }
     })
     return dataURL

@@ -82,24 +82,6 @@ object WebSocketClient {
                 retryCount.set(0)
                 reconnecting.set(false)
                 PhoneLinkService.notifyConnected("WiFi")
-                // Initial sync
-                scope.launch {
-                    try {
-                        ws.send(MessageHandler.buildDeviceStatus(context))
-                        delay(250)
-                        ws.send(com.phonebridge.sync.CallLogSync.getLastNCalls(context))
-                        delay(250)
-                        ws.send(com.phonebridge.sync.SmsSync.getLastNThreads(context))
-                        delay(250)
-                        ws.send(com.phonebridge.sync.PhotoSync.getRecentPhotos(context))
-                        delay(250)
-                        ws.send(com.phonebridge.sync.ContactsSync.getAllContacts(context))
-                        delay(250)
-                        ws.send(com.phonebridge.sync.InstalledAppsSync.getInstalledApps(context))
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Initial sync error", e)
-                    }
-                }
             }
 
             override fun onMessage(ws: WebSocket, text: String) {

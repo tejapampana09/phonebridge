@@ -1,8 +1,9 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 const api = {
   getQRCode: () => ipcRenderer.invoke('get-qr-code'),
   getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),
+  unlinkDevice: () => ipcRenderer.invoke('unlink-device'),
   sendSMS: (to: string, message: string) => ipcRenderer.invoke('send-sms', { to, message }),
   dismissNotification: (id: string) => ipcRenderer.invoke('dismiss-notification', id),
   dialNumber: (number: string) => ipcRenderer.invoke('dial-number', number),
@@ -21,6 +22,15 @@ const api = {
   answerCall: () => ipcRenderer.invoke('answer-call'),
   rejectCall: () => ipcRenderer.invoke('reject-call'),
   requestSync: () => ipcRenderer.invoke('request-sync'),
+  openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  getClipboard: () => ipcRenderer.invoke('get-clipboard'),
+  setClipboard: (text: string) => ipcRenderer.invoke('set-clipboard', text),
+  sendClipboardToPhone: (text: string) => ipcRenderer.invoke('send-clipboard-to-phone', text),
+  launchApp: (packageName: string) => ipcRenderer.invoke('launch-app', packageName),
+  markThreadRead: (threadId: string) => ipcRenderer.invoke('mark-thread-read', threadId),
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  setSetting: (key: string, value: unknown) => ipcRenderer.invoke('set-setting', key, value),
   
   // Real-time event listeners
   onPhoneEvent: (callback: (event: any, data: any) => void) => {

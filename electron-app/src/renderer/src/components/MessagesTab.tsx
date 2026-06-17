@@ -14,6 +14,34 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({ threads, refreshThread
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [inputText, setInputText] = useState('')
   const [sending, setSending] = useState(false)
+  const [composing, setComposing] = useState(false)
+  const [newNumber, setNewNumber] = useState('')
+  const [composingThread, setComposingThread] = useState<SmsThread | null>(null)
+
+  const handleComposeSubmit = (number: string) => {
+    const trimmed = number.trim()
+    if (!trimmed) return
+    
+    // Check if thread already exists in history
+    const existing = threads.find(t => t.address === trimmed || t.id === trimmed)
+    if (existing) {
+      setSelectedThreadId(existing.id)
+    } else {
+      // Create a temporary local composing thread
+      const tempThread: SmsThread = {
+        id: trimmed,
+        address: trimmed,
+        name: trimmed,
+        lastMessage: '',
+        timestamp: new Date().toISOString(),
+        messages: []
+      }
+      setComposingThread(tempThread)
+      setSelectedThreadId(trimmed)
+    }
+    setComposing(false)
+    setNewNumber('')
+  }
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -24,10 +52,15 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({ threads, refreshThread
       t.address.includes(searchQuery)
   )
 
-  const selectedThread = threads.find((t) => t.id === selectedThreadId)
+  const selectedThread = threads.find((t) => t.id === selectedThreadId) || (composingThread?.id === selectedThreadId ? composingThread : null)
 
   // Fetch messages for selected thread
   const fetchMessages = useCallback(async (threadId: string) => {
+    if (composingThread && composingThread.id === threadId) {
+      setMessages([])
+      setLoadingMessages(false)
+      return
+    }
     setLoadingMessages(true)
     try {
       const msgs = await window.api.getSmsMessages(threadId)
@@ -42,7 +75,7 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({ threads, refreshThread
     } finally {
       setLoadingMessages(false)
     }
-  }, [])
+  }, [composingThread])
 
   // Auto-scroll to bottom of chat
   const scrollToBottom = () => {
@@ -52,10 +85,16 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({ threads, refreshThread
   useEffect(() => {
     if (selectedThreadId) {
       fetchMessages(selectedThreadId)
+      const selected = threads.find((t) => t.id === selectedThreadId)
+      if (selected && selected.unread) {
+        window.api.markThreadRead(selectedThreadId).then(() => {
+          refreshThreads()
+        })
+      }
     } else {
       setMessages([])
     }
-  }, [selectedThreadId, fetchMessages])
+  }, [selectedThreadId, fetchMessages, threads, refreshThreads])
 
   useEffect(() => {
     scrollToBottom()
@@ -116,6 +155,11 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({ threads, refreshThread
         setMessages((prev) => [...prev, optimisticMsg])
         setInputText('')
         
+        // If we were composing, clear composingThread so that it now reads from the updated DB
+        if (composingThread && composingThread.id === selectedThread.id) {
+          setComposingThread(null)
+        }
+
         // Refresh SMS list after delay to sync database
         setTimeout(() => {
           refreshThreads()
@@ -148,7 +192,35 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({ threads, refreshThread
       <div className="w-80 border-r border-border flex flex-col h-full bg-sidebar">
         
         {/* Search header */}
-        <div className="p-4 border-b border-border flex-shrink-0">
+        <div className="p-4 border-b border-border flex-shrink-0 flex flex-col space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-white uppercase tracking-wider">Conversations</span>
+            <button
+              onClick={() => setComposing(!composing)}
+              className="px-2.5 py-1 bg-accent hover:bg-accent/80 text-white rounded text-[10.5px] font-bold transition-colors"
+            >
+              {composing ? 'Cancel' : '+ New'}
+            </button>
+          </div>
+          
+          {composing && (
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Phone number..."
+                value={newNumber}
+                onChange={(e) => setNewNumber(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleComposeSubmit(newNumber)
+                  }
+                }}
+                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-accent placeholder:text-dim"
+                autoFocus
+              />
+            </div>
+          )}
+
           <div className="relative">
             <Search className="absolute left-3 top-2.5 text-dim" size={16} />
             <input
@@ -180,16 +252,23 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({ threads, refreshThread
                     isSelected ? 'bg-hover border-accent' : 'border-transparent'
                   }`}
                 >
-                  <div className="w-10 h-10 rounded-full bg-card border border-border flex items-center justify-center text-sm font-bold text-accent flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-card border border-border flex items-center justify-center text-sm font-bold text-accent flex-shrink-0 relative">
                     {initials}
+                    {thread.unread && (
+                      <span className="absolute top-0 right-0 h-2.5 w-2.5 rounded-full bg-accent border border-sidebar" />
+                    )}
                   </div>
                   
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-baseline">
-                      <h4 className="text-xs font-bold text-white truncate">{thread.name || thread.address}</h4>
+                      <h4 className={`text-xs truncate ${thread.unread ? 'text-white font-bold' : 'text-white'}`}>
+                        {thread.name || thread.address}
+                      </h4>
                       <span className="text-[10px] text-dim">{formatTime(thread.timestamp)}</span>
                     </div>
-                    <p className="text-xs text-secondary mt-1 truncate">{thread.lastMessage}</p>
+                    <p className={`text-xs mt-1 truncate ${thread.unread ? 'text-white font-semibold' : 'text-secondary'}`}>
+                      {thread.lastMessage}
+                    </p>
                   </div>
                 </div>
               )

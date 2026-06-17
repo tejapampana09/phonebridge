@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import * as os from 'os'
-import { app } from 'electron'
+import { app, clipboard } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 import {
@@ -193,7 +193,8 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
         title: (msg.title as string) || '',
         message: (msg.message as string) || '',
         timestamp: (msg.timestamp as string) || new Date().toISOString(),
-        icon: (msg.icon as string) || undefined
+        icon: (msg.icon as string) || undefined,
+        replyable: Boolean(msg.replyable)
       }
       saveNotification(notif)
       showNotification(notif.app, notif.title, notif.message)
@@ -246,10 +247,11 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
         body: (msg.body as string) || '',
         timestamp: (msg.timestamp as string) || new Date().toISOString()
       }
+      const threadId = (msg.threadId as string) || (sms.address as string)
       saveSmses({
         threads: [
           {
-            id: sms.address,
+            id: threadId,
             address: sms.address,
             name: sms.name,
             lastMessage: sms.body,
@@ -257,14 +259,14 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
             messages: [
               {
                 ...sms,
-                threadId: sms.address,
+                threadId: threadId,
                 direction: 'in' as const
               }
             ]
           }
         ]
       })
-      emitToRenderer('phone-event', { type: 'SMS_RECEIVED', data: sms })
+      emitToRenderer('phone-event', { type: 'SMS_RECEIVED', data: { ...sms, threadId } })
       break
     }
 
@@ -283,7 +285,8 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
         id: (p.id as string) || `photo_${Date.now()}`,
         name: (p.name as string) || 'photo.jpg',
         size: (p.size as number) || 0,
-        timestamp: (p.timestamp as string) || new Date().toISOString()
+        timestamp: (p.timestamp as string) || new Date().toISOString(),
+        thumbnail: (p.thumbnail as string) || undefined
       }))
       savePhotos(normalized)
       emitToRenderer('phone-event', { type: 'PHOTO_METADATA', data: normalized })
@@ -311,6 +314,15 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
       if (source?.type === 'ws' && source.ws) {
         const client = clients.get(source.ws)
         if (client) client.lastPong = Date.now()
+      }
+      break
+    }
+
+    case 'CLIPBOARD_CHANGED': {
+      const text = msg.text as string
+      if (text) {
+        clipboard.writeText(text)
+        emitToRenderer('phone-event', { type: 'CLIPBOARD_CHANGED', data: { text } })
       }
       break
     }
@@ -353,4 +365,22 @@ export function stopWebSocketServer(): void {
   clients.clear()
   wss?.close()
   wss = null
+}
+
+export function disconnectAllClients(): void {
+  sendToPhone({ type: 'UNLINK' })
+  setTimeout(() => {
+    clients.forEach((_, ws) => {
+      try {
+        ws.terminate()
+      } catch (e) {
+        console.error('[WS] Failed to terminate ws:', e)
+      }
+    })
+    clients.clear()
+    emitToRenderer('connection-changed', {
+      connected: false,
+      count: 0
+    })
+  }, 100)
 }

@@ -62,6 +62,7 @@ class SmsReceiver : BroadcastReceiver() {
                 put("name", contactName)
                 put("body", body)
                 put("timestamp", isoTimestamp)
+                put("threadId", getThreadId(context, sender))
             }
 
             if (ConnectionManager.isConnected()) {
@@ -100,5 +101,16 @@ class SmsReceiver : BroadcastReceiver() {
             cursor?.close()
         }
         return contactName
+    }
+
+    private fun getThreadId(context: Context, address: String): String {
+        val uri = Uri.parse("content://sms/inbox")
+        val cursor = try {
+            context.contentResolver.query(uri, arrayOf("thread_id"), "address=?", arrayOf(address), "date DESC")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to query thread id", e)
+            null
+        }
+        return cursor?.use { if (it.moveToFirst()) it.getString(0) else address } ?: address
     }
 }

@@ -74,6 +74,30 @@ object PhotoSync {
                         put("name", name)
                         put("size", size)
                         put("timestamp", isoDate)
+                        
+                        try {
+                            val thumbUri = android.content.ContentUris.withAppendedId(
+                                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                id.toLong()
+                            )
+                            val thumbnail = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                context.contentResolver.loadThumbnail(thumbUri, android.util.Size(120, 120), null)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                MediaStore.Images.Thumbnails.getThumbnail(
+                                    context.contentResolver, id.toLong(),
+                                    MediaStore.Images.Thumbnails.MINI_KIND, null
+                                )
+                            }
+                            if (thumbnail != null) {
+                                val stream = java.io.ByteArrayOutputStream()
+                                thumbnail.compress(android.graphics.Bitmap.CompressFormat.JPEG, 50, stream)
+                                val thumbBase64 = android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
+                                put("thumbnail", "data:image/jpeg;base64,$thumbBase64")
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to load thumbnail for photo $id", e)
+                        }
                     }
                     photoArray.put(photoObj)
                     count++

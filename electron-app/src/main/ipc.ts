@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, app } from 'electron'
+import { ipcMain, BrowserWindow, app, dialog, clipboard } from 'electron'
 import { generateQR } from './qr'
 import * as fs from 'fs'
 import { join } from 'path'
@@ -29,6 +29,27 @@ export function emitToRenderer(event: string, data: any): void {
   }
 }
 
+const settingsPath = join(app.getPath('userData'), 'settings.json')
+
+export function getSettings(): any {
+  try {
+    if (fs.existsSync(settingsPath)) {
+      return JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+    }
+  } catch (err) {
+    console.error('Error reading settings:', err)
+  }
+  return {}
+}
+
+export function saveSettings(s: object): void {
+  try {
+    fs.writeFileSync(settingsPath, JSON.stringify(s, null, 2), 'utf8')
+  } catch (err) {
+    console.error('Error writing settings:', err)
+  }
+}
+
 export function registerIpcHandlers(): void {
   // 1. Get QR Code
   ipcMain.handle('get-qr-code', async () => {
@@ -41,11 +62,29 @@ export function registerIpcHandlers(): void {
     }
   })
 
+  // 1.1 settings handlers
+  ipcMain.handle('get-settings', () => getSettings())
+  ipcMain.handle('set-setting', (_, key: string, value: unknown) => {
+    const s = getSettings()
+    s[key] = value
+    saveSettings(s)
+    if (key === 'openAtLogin') {
+      app.setLoginItemSettings({ openAtLogin: Boolean(value) })
+    }
+    return true
+  })
+
+  // 1.2 file dialog handler
+  ipcMain.handle('open-file-dialog', async () => {
+    const result = await dialog.showOpenDialog({ properties: ['openFile'] })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
   // 2. Get Connection Status
   ipcMain.handle('get-connection-status', () => {
     const wsConnected = getConnectedCount() > 0
-    // Simple placeholder logic for Bluetooth connection status — if we sent something successfully or have client
-    const btConnected = false // Handled inside bluetooth.ts triggers
+    const { isBluetoothConnected } = require('./bluetooth')
+    const btConnected = isBluetoothConnected()
     const devices = getConnectedDeviceNames()
     const deviceName = devices.length > 0 ? devices[0] : 'Android Phone'
     
@@ -55,6 +94,20 @@ export function registerIpcHandlers(): void {
       deviceName,
       btAvailable: isBluetoothAvailable()
     }
+  })
+
+  // 2.1 Unlink Device
+  ipcMain.handle('unlink-device', async () => {
+    console.log('[IPC] Unlinking device...')
+    const { disconnectBluetoothClient } = require('./bluetooth')
+    const { disconnectAllClients } = require('./server')
+    const { clearAllData } = require('./database')
+
+    disconnectBluetoothClient()
+    disconnectAllClients()
+    clearAllData()
+
+    return true
   })
 
   // 3. Send SMS from PC
@@ -158,6 +211,48 @@ export function registerIpcHandlers(): void {
       success = sendViaBluetooth(payload)
     }
     return success
+  })
+
+  // 4.7. Clipboard handlers
+  ipcMain.handle('get-clipboard', () => clipboard.readText())
+  ipcMain.handle('set-clipboard', (_, text: string) => {
+    clipboard.writeText(text)
+    return true
+  })
+  ipcMain.handle('send-clipboard-to-phone', async (_, text: string) => {
+    const payload = {
+      type: 'SET_CLIPBOARD',
+      text
+    }
+    console.log(`[IPC] Sending clipboard to phone: ${text}`)
+    let success = false
+    if (getConnectedCount() > 0) {
+      sendToPhone(payload)
+      success = true
+    } else if (isBluetoothAvailable()) {
+      success = sendViaBluetooth(payload)
+    }
+    return success
+  })
+
+  // 4.8. App launcher handler
+  ipcMain.handle('launch-app', async (_, packageName: string) => {
+    const payload = { type: 'LAUNCH_APP', package: packageName }
+    let success = false
+    if (getConnectedCount() > 0) {
+      sendToPhone(payload)
+      success = true
+    } else if (isBluetoothAvailable()) {
+      success = sendViaBluetooth(payload)
+    }
+    return success
+  })
+
+  // 4.9. Mark thread as read
+  ipcMain.handle('mark-thread-read', async (_, threadId: string) => {
+    const { markThreadRead } = require('./database')
+    markThreadRead(threadId)
+    return true
   })
 
   // 5. Database queries

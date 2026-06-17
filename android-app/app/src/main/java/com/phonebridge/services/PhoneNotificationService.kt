@@ -50,6 +50,17 @@ class PhoneNotificationService : NotificationListenerService() {
             }
             return false
         }
+
+        fun cancelByKey(key: String): Boolean {
+            val service = instance ?: return false
+            try {
+                service.cancelNotification(key)
+                return true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to cancel notification: $key", e)
+            }
+            return false
+        }
     }
 
     override fun onCreate() {
@@ -102,6 +113,10 @@ class PhoneNotificationService : NotificationListenerService() {
                 timeZone = java.util.TimeZone.getTimeZone("UTC")
             }.format(java.util.Date(timestamp))
 
+            val isReplyable = sbn.notification.actions?.any { action ->
+                action.remoteInputs?.isNotEmpty() == true
+            } ?: false
+
             val notifJson = JSONObject().apply {
                 put("type", "NOTIFICATION")
                 put("id", sbn.key)
@@ -110,6 +125,7 @@ class PhoneNotificationService : NotificationListenerService() {
                 put("title", title)
                 put("message", text)
                 put("timestamp", isoTimestamp)
+                put("replyable", isReplyable)
                 if (iconBase64 != null) {
                     put("icon", "data:image/jpeg;base64,$iconBase64")
                 }

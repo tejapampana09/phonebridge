@@ -101,7 +101,8 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     val statusDotColor = if (isConnected) Color(0xFF4CAF50) else Color(0xFFF44336)
-                    val statusText = if (isConnected) "Connected to PC" else "Disconnected"
+                    val pcName = com.phonebridge.pairing.PairingManager.getPcName()
+                    val statusText = if (isConnected) "Connected to $pcName" else "Disconnected"
                     
                     Box(
                         modifier = Modifier

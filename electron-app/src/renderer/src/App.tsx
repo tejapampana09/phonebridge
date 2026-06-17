@@ -20,13 +20,28 @@ import {
   X,
   Link,
   User,
-  FileUp
+  FileUp,
+  Settings
 } from 'lucide-react'
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabId>('calls')
   const [isPaired, setIsPaired] = useState(false)
   const [incomingCall, setIncomingCall] = useState<{ name: string; number: string } | null>(null)
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [openAtLogin, setOpenAtLogin] = useState(false)
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const s = await window.api.getSettings()
+        setOpenAtLogin(s.openAtLogin ?? false)
+      } catch (err) {
+        console.error('Failed to load settings:', err)
+      }
+    }
+    loadSettings()
+  }, [])
 
   const {
     notifications,
@@ -147,8 +162,13 @@ function App() {
     setIncomingCall(null)
   }
 
-  const handleUnpair = () => {
+  const handleUnpair = async () => {
     if (confirm('Are you sure you want to disconnect and unpair your mobile device?')) {
+      try {
+        await window.api.unlinkDevice()
+      } catch (err) {
+        console.error('Failed to unlink device:', err)
+      }
       setIsPaired(false)
       // Refresh local DB after unpairing
       refreshAll()
@@ -173,14 +193,31 @@ function App() {
           <Link size={14} className="text-accent animate-pulse" />
           <span className="text-xs font-semibold tracking-wide text-white">PhoneBridge</span>
           {isPaired && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success font-medium border border-success/20">
-              Linked
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium border ${
+              deviceStatus?.connected
+                ? 'bg-success/15 text-success border-success/20'
+                : 'bg-warning/15 text-warning border-warning/20'
+            }`}>
+              {deviceStatus?.connected
+                ? deviceStatus.btConnected
+                  ? 'Linked via Bluetooth'
+                  : 'Linked via Local WiFi'
+                : 'Connecting...'}
             </span>
           )}
         </div>
 
         {/* Window controls */}
-        <div className="no-drag flex items-center h-full">
+        <div className="no-drag flex items-center h-full space-x-1">
+          {isPaired && (
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              className="h-10 w-11 flex items-center justify-center hover:bg-hover transition-colors text-dim hover:text-white"
+              title="Settings"
+            >
+              <Settings size={14} />
+            </button>
+          )}
           <button
             onClick={minimizeWindow}
             className="h-10 w-11 flex items-center justify-center hover:bg-hover transition-colors"
@@ -312,7 +349,7 @@ function App() {
 
             {/* Active Tab Viewport */}
             <div className="flex-1 overflow-hidden relative">
-              {activeTab === 'calls' && <CallsTab calls={calls} />}
+              {activeTab === 'calls' && <CallsTab calls={calls} contacts={contacts} />}
               {activeTab === 'contacts' && <ContactsTab contacts={contacts} />}
               {activeTab === 'messages' && (
                 <MessagesTab threads={smsThreads} refreshThreads={fetchSmsThreads} />
@@ -334,6 +371,57 @@ function App() {
           onAnswer={handleAnswerCall}
           onDecline={handleDeclineCall}
         />
+      )}
+
+      {/* 4. Settings Modal Overlay */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-sidebar border border-border w-full max-w-md rounded-2xl shadow-2xl p-6 relative animate-fade-in">
+            <button
+              onClick={() => setShowSettingsModal(false)}
+              className="absolute top-4 right-4 p-1 rounded hover:bg-hover text-dim hover:text-white transition-colors"
+            >
+              <X size={16} />
+            </button>
+            
+            <div className="flex items-center space-x-3 mb-6">
+              <Settings className="text-accent animate-spin-slow" size={20} />
+              <h2 className="text-base font-bold text-white">PhoneBridge Settings</h2>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="flex items-center justify-between p-3.5 bg-primary/30 border border-border/60 rounded-xl">
+                <div>
+                  <h4 className="text-xs font-bold text-white">Launch at startup</h4>
+                  <p className="text-[10px] text-dim mt-0.5">Start PhoneBridge automatically when Windows starts.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={openAtLogin}
+                  onChange={async (e) => {
+                    const newVal = e.target.checked
+                    setOpenAtLogin(newVal)
+                    try {
+                      await window.api.setSetting('openAtLogin', newVal)
+                    } catch (err) {
+                      console.error('Failed to update startup setting:', err)
+                    }
+                  }}
+                  className="w-4 h-4 rounded text-accent focus:ring-accent accent-accent cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end">
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                className="px-4 py-2 bg-accent hover:bg-accent/80 text-white rounded-lg text-xs font-bold shadow-md transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

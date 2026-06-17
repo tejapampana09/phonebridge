@@ -19,6 +19,10 @@ class HeartbeatWorker(context: Context, params: WorkerParameters) : CoroutineWor
         
         try {
             ConnectionManager.init(applicationContext)
+            if (!ConnectionManager.isConnected()) {
+                ConnectionManager.connect() // attempt reconnect
+                kotlinx.coroutines.delay(5000) // wait for connection
+            }
             if (ConnectionManager.isConnected()) {
                 val statusJson = MessageHandler.buildDeviceStatus(applicationContext)
                 ConnectionManager.send(statusJson)

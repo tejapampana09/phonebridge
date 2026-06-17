@@ -60,7 +60,18 @@ export function useDatabase() {
       if (data) {
         setDeviceStatus({
           ...data,
-          connected: conn.wsConnected || conn.btConnected
+          connected: conn.wsConnected || conn.btConnected,
+          btConnected: conn.btConnected
+        })
+      } else {
+        setDeviceStatus({
+          battery: 0,
+          charging: false,
+          network: 'offline',
+          signal: 0,
+          deviceName: conn.deviceName || 'Android Phone',
+          connected: conn.wsConnected || conn.btConnected,
+          btConnected: conn.btConnected
         })
       }
     } catch (err) {

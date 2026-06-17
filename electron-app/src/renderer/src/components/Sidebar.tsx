@@ -42,6 +42,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // State for notification quick reply
   const [replyingId, setReplyingId] = React.useState<string | null>(null)
   const [replyText, setReplyText] = React.useState('')
+  const [lastSyncedClip, setLastSyncedClip] = React.useState('')
+
+  React.useEffect(() => {
+    const handleClipboardEvent = (_event: any, payload: any) => {
+      if (payload.type === 'CLIPBOARD_CHANGED') {
+        setLastSyncedClip(payload.data.text)
+      }
+    }
+    const sub = window.api.onPhoneEvent(handleClipboardEvent)
+    return () => {
+      window.api.removePhoneEventListener(sub)
+    }
+  }, [])
 
   // Format notification time
   const formatTime = (isoString: string) => {
@@ -69,7 +82,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="flex items-center space-x-1.5 mt-0.5">
               <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-success animate-pulse' : 'bg-dim'}`} />
               <span className="text-xs text-muted">
-                {isConnected ? 'Linked via local sync' : 'Offline'}
+                {isConnected
+                  ? deviceStatus?.btConnected
+                    ? 'Linked via Bluetooth'
+                    : 'Linked via Local WiFi'
+                  : 'Offline'}
               </span>
             </div>
           </div>
@@ -130,6 +147,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
 
       </div>
+
+      {/* 1.5 Synced Clipboard Sync Section */}
+      {isConnected && (
+        <div className="p-4 mx-4 mb-4 bg-primary/30 border border-border/60 rounded-xl space-y-2.5">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] text-muted font-bold tracking-wider uppercase flex items-center space-x-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+              <span>Synced Clipboard</span>
+            </span>
+            <button
+              onClick={async () => {
+                try {
+                  const pcClip = await window.api.getClipboard()
+                  if (pcClip) {
+                    const ok = await window.api.sendClipboardToPhone(pcClip)
+                    if (ok) {
+                      alert('PC clipboard sent to phone!')
+                    }
+                  } else {
+                    alert('PC clipboard is empty.')
+                  }
+                } catch (err) {
+                  console.error(err)
+                }
+              }}
+              className="text-[10px] text-accent font-semibold hover:underline"
+            >
+              Push PC Clip
+            </button>
+          </div>
+          {lastSyncedClip ? (
+            <div className="flex items-start justify-between space-x-2 bg-card p-2.5 rounded-lg border border-border/60">
+              <p className="text-xs text-secondary line-clamp-2 break-all pr-1 flex-1 font-mono">
+                {lastSyncedClip}
+              </p>
+              <button
+                onClick={() => {
+                  window.api.setClipboard(lastSyncedClip)
+                  alert('Copied to PC clipboard!')
+                }}
+                className="text-[10px] bg-accent/10 border border-accent/20 hover:bg-accent/20 text-accent px-2 py-1 rounded flex-shrink-0 font-bold transition-all"
+                title="Copy to PC clipboard"
+              >
+                Copy
+              </button>
+            </div>
+          ) : (
+            <p className="text-[10px] text-dim italic text-center py-1">No clipboard content synced yet.</p>
+          )}
+        </div>
+      )}
 
       {/* 2. Notifications Section Header */}
       <div className="px-6 py-4 flex items-center justify-between text-xs text-muted font-bold tracking-wider uppercase border-b border-border bg-primary/20">
@@ -212,15 +280,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </button>
                     </form>
                   ) : (
-                    <button
-                      onClick={() => {
-                        setReplyingId(notif.id)
-                        setReplyText('')
-                      }}
-                      className="mt-1.5 text-[10px] text-accent font-semibold hover:underline"
-                    >
-                      Reply
-                    </button>
+                    notif.replyable === true && (
+                      <button
+                        onClick={() => {
+                          setReplyingId(notif.id)
+                          setReplyText('')
+                        }}
+                        className="mt-1.5 text-[10px] text-accent font-semibold hover:underline"
+                      >
+                        Reply
+                      </button>
+                    )
                   )}
                 </div>
 

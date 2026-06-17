@@ -8,8 +8,6 @@ export const FilesTab: React.FC = () => {
     type: 'idle',
     message: ''
   })
-  
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault()
@@ -53,22 +51,16 @@ export const FilesTab: React.FC = () => {
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0]
-      // Use Electron's native file path property
-      const path = (file as any).path
-      if (path) {
-        handleFileDrop(path)
-      } else {
+      try {
+        const path = window.api.getPathForFile(file)
+        if (path) {
+          handleFileDrop(path)
+        } else {
+          setStatus({ type: 'error', message: 'Could not resolve file path.' })
+        }
+      } catch (err) {
+        console.error(err)
         setStatus({ type: 'error', message: 'Could not resolve file path.' })
-      }
-    }
-  }
-
-  const onFileSelectChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      const path = (file as any).path
-      if (path) {
-        handleFileDrop(path)
       }
     }
   }
@@ -89,20 +81,23 @@ export const FilesTab: React.FC = () => {
           onDragOver={handleDrag}
           onDragLeave={handleDrag}
           onDrop={onDrop}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={async () => {
+            if (uploading) return
+            try {
+              const path = await window.api.openFileDialog()
+              if (path) {
+                handleFileDrop(path)
+              }
+            } catch (err) {
+              console.error('Failed to open file dialog:', err)
+            }
+          }}
           className={`w-full max-w-xl aspect-video border-2 border-dashed rounded-2xl flex flex-col items-center justify-center p-8 text-center cursor-pointer transition-all duration-300 ${
             dragActive
               ? 'border-accent bg-accent/5 scale-[1.01]'
               : 'border-border hover:border-accent/40 bg-sidebar/40 hover:bg-sidebar/80'
           }`}
         >
-          {/* File input (hidden) */}
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={onFileSelectChange}
-            className="hidden"
-          />
 
           {uploading ? (
             <div className="space-y-4 text-secondary">

@@ -14,36 +14,25 @@ object CallControlService {
 
     fun answerCall(context: Context): Boolean {
         try {
-            val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
-            if (telecomManager == null) {
-                Log.e(TAG, "TelecomManager not available")
-                return false
+            // HEADSETHOOK simulation is the most reliable approach across all API levels
+            // without requiring MODIFY_PHONE_STATE (system-only) permission.
+            val down = android.content.Intent(android.content.Intent.ACTION_MEDIA_BUTTON).apply {
+                putExtra(
+                    android.content.Intent.EXTRA_KEY_EVENT,
+                    android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_HEADSETHOOK)
+                )
             }
+            context.sendOrderedBroadcast(down, null)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED) {
-                    @Suppress("DEPRECATION")
-                    telecomManager.acceptRingingCall()
-                    Log.i(TAG, "Call answered via TelecomManager.acceptRingingCall()")
-                    return true
-                } else {
-                    Log.w(TAG, "Missing ANSWER_PHONE_CALLS permission")
-                    return false
-                }
-            } else {
-                // Key event hook emulation for older versions
-                val intent = android.content.Intent(android.content.Intent.ACTION_MEDIA_BUTTON).apply {
-                    putExtra(android.content.Intent.EXTRA_KEY_EVENT, android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_HEADSETHOOK))
-                }
-                context.sendOrderedBroadcast(intent, null)
-                
-                val intentUp = android.content.Intent(android.content.Intent.ACTION_MEDIA_BUTTON).apply {
-                    putExtra(android.content.Intent.EXTRA_KEY_EVENT, android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_HEADSETHOOK))
-                }
-                context.sendOrderedBroadcast(intentUp, null)
-                Log.i(TAG, "Call answered via headset event simulation")
-                return true
+            val up = android.content.Intent(android.content.Intent.ACTION_MEDIA_BUTTON).apply {
+                putExtra(
+                    android.content.Intent.EXTRA_KEY_EVENT,
+                    android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_HEADSETHOOK)
+                )
             }
+            context.sendOrderedBroadcast(up, null)
+            Log.i(TAG, "Call answered via HEADSETHOOK simulation")
+            return true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to answer call", e)
             return false
@@ -68,15 +57,18 @@ object CallControlService {
                     return false
                 }
             } else {
-                // Try ITelephony reflection fallback
-                val telephonyClass = Class.forName(telecomManager.javaClass.name)
-                val getITelephonyMethod = telephonyClass.getDeclaredMethod("getITelephony")
-                getITelephonyMethod.isAccessible = true
-                val iTelephony = getITelephonyMethod.invoke(telecomManager)
-                val iTelephonyClass = Class.forName(iTelephony.javaClass.name)
-                val endCallMethod = iTelephonyClass.getDeclaredMethod("endCall")
-                endCallMethod.invoke(iTelephony)
-                Log.i(TAG, "Call ended/rejected via reflection")
+                // Safe fallback for pre-API-28: open the dialer so user can reject manually.
+                // The reflection approach (getITelephony on TelecomManager) is on the wrong class
+                // and throws NoSuchMethodException on every device.
+                try {
+                    val intent = android.content.Intent(android.content.Intent.ACTION_ANSWER).apply {
+                        flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                    Log.i(TAG, "Opened dialer via ACTION_ANSWER fallback (pre-API-28)")
+                } catch (e2: Exception) {
+                    Log.e(TAG, "ACTION_ANSWER fallback failed", e2)
+                }
                 return true
             }
         } catch (e: Exception) {

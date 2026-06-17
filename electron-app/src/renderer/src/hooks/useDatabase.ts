@@ -121,13 +121,23 @@ export function useDatabase() {
 
       if (type === 'NOTIFICATION') {
         fetchNotifications()
-      } else if (type === 'CALL_HISTORY' || type === 'CALL_INCOMING' || type === 'CALL_UPDATE') {
+      } else if (type === 'CALL_HISTORY' || type === 'CALL_UPDATE') {
         fetchCalls()
       } else if (type === 'SMS_RECEIVED' || type === 'SMS_HISTORY') {
         fetchSmsThreads()
       } else if (type === 'PHOTO_METADATA' || type === 'PHOTO_DOWNLOADED') {
         fetchPhotos()
       } else if (type === 'DEVICE_STATUS') {
+        // Immediately mark connected since receiving this message proves the phone is live
+        setDeviceStatus(prev => ({
+          battery: payload.data?.battery ?? prev?.battery ?? 0,
+          charging: payload.data?.charging ?? prev?.charging ?? false,
+          network: payload.data?.network ?? prev?.network ?? 'offline',
+          signal: payload.data?.signal ?? prev?.signal ?? 0,
+          deviceName: payload.data?.deviceName ?? prev?.deviceName ?? 'Android Phone',
+          connected: true,
+          btConnected: prev?.btConnected ?? false
+        }))
         fetchDeviceStatus()
       } else if (type === 'CONTACTS_HISTORY') {
         fetchContacts()

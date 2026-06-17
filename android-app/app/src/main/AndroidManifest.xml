@@ -108,6 +108,15 @@
             </intent-filter>
         </receiver>
 
+        <!-- Outgoing call receiver: captures dialed number before OFFHOOK -->
+        <receiver
+            android:name=".services.OutgoingCallReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
+            </intent-filter>
+        </receiver>
+
         <!-- Boot receiver -->
         <receiver
             android:name=".workers.BootReceiver"

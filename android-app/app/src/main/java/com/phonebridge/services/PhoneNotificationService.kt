@@ -18,6 +18,10 @@ private const val TAG = "PhoneNotifService"
 
 class PhoneNotificationService : NotificationListenerService() {
 
+    // Dedup cache: key = sbn.key, value = "$title|$text"
+    // Prevents notification spam when reconnecting to a session with many active notifications.
+    private val notifCache = mutableMapOf<String, String>()
+
     companion object {
         private var instance: PhoneNotificationService? = null
 
@@ -89,11 +93,18 @@ class PhoneNotificationService : NotificationListenerService() {
         try {
             val extras = sbn.notification.extras
             val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
-            val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+            // EXTRA_BIG_TEXT contains the full message for expanded styles (WhatsApp, Gmail, etc.)
+            val text = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+                ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
             
             // Skip empty notifications or group summaries
             if (title.isEmpty() && text.isEmpty()) return
             if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+
+            // Dedup check: skip if we already sent this exact title+text for this key
+            val cacheValue = "$title|$text"
+            if (notifCache[sbn.key] == cacheValue) return
+            notifCache[sbn.key] = cacheValue
 
             val pm = packageManager
             val appInfo = pm.getApplicationInfo(packageName, 0)
@@ -144,7 +155,21 @@ class PhoneNotificationService : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         super.onNotificationRemoved(sbn)
-        // Optionally send a dismiss event to PC if needed, but PC generally controls dismissals
+        // Clean up dedup cache entry
+        notifCache.remove(sbn.key)
+        // Notify PC so it can remove the notification from its list
+        if (ConnectionManager.isConnected()) {
+            try {
+                val json = JSONObject().apply {
+                    put("type", "NOTIFICATION_REMOVED")
+                    put("id", sbn.key)
+                }
+                ConnectionManager.send(json.toString())
+                Log.d(TAG, "Sent NOTIFICATION_REMOVED for ${sbn.packageName}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to send NOTIFICATION_REMOVED", e)
+            }
+        }
     }
 
     /**

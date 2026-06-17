@@ -136,8 +136,8 @@ object MessageHandler {
                     val pcName = json.optString("pcName", "PC")
                     PairingManager.savePcName(pcName)
                     Log.i(TAG, "CONNECT_ACK from $pcName")
-                    // Trigger sync on connect acknowledgement
-                    triggerSync(context)
+                    // Note: sync is already triggered by WebSocketClient.onOpen()
+                    // Do NOT call triggerSync here — it causes every connection to sync twice.
                     // Broadcast to update UI
                     val intent = Intent(ACTION_CONNECTED).putExtra(EXTRA_PC_NAME, pcName)
                     context.sendBroadcast(intent)
@@ -155,6 +155,9 @@ object MessageHandler {
                 MsgType.SET_CLIPBOARD -> {
                     val text = json.optString("text")
                     if (text.isNotBlank()) {
+                        // Suppress the echo loop: tell PhoneLinkService to skip the next
+                        // clipboard change event so it doesn't send CLIPBOARD_CHANGED back to PC
+                        com.phonebridge.services.PhoneLinkService.suppressNextClipboard()
                         val handler = android.os.Handler(android.os.Looper.getMainLooper())
                         handler.post {
                             com.phonebridge.sync.ClipboardSync.setClipboard(context, text)
@@ -313,13 +316,6 @@ object MessageHandler {
             .put("ts",     System.currentTimeMillis())
             .toString()
 
-    /** Builds an SMS_RECEIVED JSON. */
-    fun buildSmsReceived(sender: String, name: String?, body: String): String =
-        JSONObject()
-            .put("type",   MsgType.SMS_RECEIVED)
-            .put("sender", sender)
-            .put("name",   name ?: sender)
-            .put("body",   body)
-            .put("ts",     System.currentTimeMillis())
-            .toString()
+    // buildSmsReceived() was removed — it used the wrong field name "sender" instead of "address"
+    // and was dead code (never called). SmsReceiver.kt builds the correct JSON inline.
 }

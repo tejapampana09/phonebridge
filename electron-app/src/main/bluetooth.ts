@@ -35,23 +35,20 @@ export function startBluetoothServer(): void {
       console.log(`Bluetooth client connected: ${clientAddress}`)
       connectedSocket = btServer
       
-      emitToRenderer('phone-event', {
-        type: 'CONNECTION_STATUS',
-        payload: { btConnected: true, clientAddress }
+      emitToRenderer('connection-changed', {
+        connected: true,
+        count: 1,
+        btConnected: true
       })
 
       btServer.on('data', (buffer: Buffer) => {
         try {
           const messageStr = buffer.toString('utf-8')
-          console.log(`Bluetooth received: ${messageStr}`)
-          // Reuse server.ts's parser
-          const connectionContext = {
-            send: (dataStr: string) => sendViaBluetooth(JSON.parse(dataStr)),
-            type: 'bluetooth'
-          }
-          handleIncoming(messageStr, connectionContext)
+          console.log(`[BT] Received: ${messageStr.slice(0, 120)}`)
+          const parsed = JSON.parse(messageStr)
+          handleIncoming(parsed, { type: 'bt' })
         } catch (e) {
-          console.error('Error processing Bluetooth message data:', e)
+          console.error('[BT] Error processing message data:', e)
         }
       })
     }, (error: any) => {

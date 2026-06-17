@@ -9,9 +9,27 @@ import android.provider.ContactsContract
 import android.telephony.TelephonyManager
 import android.util.Log
 import com.phonebridge.connection.ConnectionManager
+import com.phonebridge.connection.MessageHandler
 import org.json.JSONObject
 
 private const val TAG = "CallReceiver"
+
+/**
+ * Holds the last outgoing dialed number captured from ACTION_NEW_OUTGOING_CALL.
+ * Used to enrich CALL_UPDATE messages when EXTRA_STATE_OFFHOOK fires.
+ */
+object OutgoingCallState {
+    @Volatile var lastOutgoingNumber: String = ""
+}
+
+class OutgoingCallReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_NEW_OUTGOING_CALL) {
+            val number = intent.getStringExtra(Intent.EXTRA_PHONE_NUMBER)
+            OutgoingCallState.lastOutgoingNumber = number ?: ""
+        }
+    }
+}
 
 class CallReceiver : BroadcastReceiver() {
 
@@ -41,10 +59,12 @@ class CallReceiver : BroadcastReceiver() {
                     }
                 }
                 TelephonyManager.EXTRA_STATE_OFFHOOK -> {
-                    // Call answered
+                    // Call answered — include outgoing number if available
+                    val outgoingNumber = OutgoingCallState.lastOutgoingNumber
                     val updateJson = JSONObject().apply {
                         put("type", "CALL_UPDATE")
                         put("status", "answered")
+                        if (outgoingNumber.isNotBlank()) put("number", outgoingNumber)
                     }
                     if (ConnectionManager.isConnected()) {
                         ConnectionManager.send(updateJson.toString())

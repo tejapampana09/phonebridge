@@ -30,8 +30,18 @@ class PhoneLinkService : Service() {
     private var heartbeatJob: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    /** Set to true by MessageHandler when it writes the PC clipboard to the phone.
+     *  The clipboardListener will skip the next change to break the echo loop. */
+    @Volatile var suppressNextClipboard = false
+
     companion object {
         @Volatile private var instance: PhoneLinkService? = null
+
+        fun isRunning(): Boolean = instance != null
+
+        fun suppressNextClipboard() {
+            instance?.suppressNextClipboard = true
+        }
 
         fun start(context: Context) {
             val intent = Intent(context, PhoneLinkService::class.java)
@@ -85,6 +95,7 @@ class PhoneLinkService : Service() {
         ConnectionManager.init(this)
         ConnectionManager.connect()
         startHeartbeat()
+        com.phonebridge.workers.HeartbeatWorker.schedule(this)
 
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
         cm.addPrimaryClipChangedListener(clipboardListener)
@@ -122,6 +133,11 @@ class PhoneLinkService : Service() {
     // ──────────────────────────────────────────────────────────────────────────
 
     private val clipboardListener = android.content.ClipboardManager.OnPrimaryClipChangedListener {
+        // Break echo loop: if the PC just set our clipboard via SET_CLIPBOARD, skip this event
+        if (suppressNextClipboard) {
+            suppressNextClipboard = false
+            return@OnPrimaryClipChangedListener
+        }
         val text = com.phonebridge.sync.ClipboardSync.getCurrentClipboard(this)
         if (!text.isNullOrBlank()) {
             val clipJson = org.json.JSONObject().apply {

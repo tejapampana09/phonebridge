@@ -15,7 +15,7 @@ import {
   dismissNotification as dbDismissNotification
 } from './database'
 import { sendToPhone, getConnectedCount, getConnectedDeviceNames } from './server'
-import { isBluetoothAvailable, sendViaBluetooth } from './bluetooth'
+import { isBluetoothAvailable, sendViaBluetooth, isBluetoothConnected, disconnectBluetoothClient } from './bluetooth'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -83,7 +83,6 @@ export function registerIpcHandlers(): void {
   // 2. Get Connection Status
   ipcMain.handle('get-connection-status', () => {
     const wsConnected = getConnectedCount() > 0
-    const { isBluetoothConnected } = require('./bluetooth')
     const btConnected = isBluetoothConnected()
     const devices = getConnectedDeviceNames()
     const deviceName = devices.length > 0 ? devices[0] : 'Android Phone'
@@ -99,7 +98,6 @@ export function registerIpcHandlers(): void {
   // 2.1 Unlink Device
   ipcMain.handle('unlink-device', async () => {
     console.log('[IPC] Unlinking device...')
-    const { disconnectBluetoothClient } = require('./bluetooth')
     const { disconnectAllClients } = require('./server')
     const { clearAllData } = require('./database')
 
@@ -111,11 +109,12 @@ export function registerIpcHandlers(): void {
   })
 
   // 3. Send SMS from PC
-  ipcMain.handle('send-sms', async (_, { to, message }) => {
+  ipcMain.handle('send-sms', async (_, args) => {
+    const { to, message } = args as { to: string; message: string }
     const payload = {
       type: 'SEND_SMS',
       to,
-      message
+      body: message
     }
     console.log(`[IPC] Sending SMS to ${to}: ${message}`)
     
@@ -404,13 +403,16 @@ export function registerIpcHandlers(): void {
   // reject-call
   ipcMain.handle('reject-call', async () => {
     const payload = { type: 'REJECT_CALL' }
+    let success = false
     if (getConnectedCount() > 0) {
       sendToPhone(payload)
-      return true
+      success = true
     } else if (isBluetoothAvailable()) {
-      return sendViaBluetooth(payload)
+      success = sendViaBluetooth(payload)
     }
-    return false
+    // Immediately close the incoming call modal on PC without waiting for Android confirmation
+    emitToRenderer('phone-event', { type: 'CALL_UPDATE', data: { status: 'ended' } })
+    return success
   })
 
   // 6. Request Sync

@@ -10,7 +10,8 @@ import {
   savePhotos,
   updateDeviceStatus,
   saveContacts,
-  saveApps
+  saveApps,
+  dismissNotification
 } from './database'
 import { emitToRenderer } from './ipc'
 import { showNotification, showCallNotification } from './notifications'
@@ -24,6 +25,39 @@ interface ConnectedClient {
 const clients = new Map<WebSocket, ConnectedClient>()
 let wss: WebSocketServer | null = null
 let pingInterval: NodeJS.Timeout | null = null
+
+// ─── Clipboard polling ────────────────────────────────────────────────────────
+let lastClipboardText = ''
+let suppressNextClipboard = false
+let clipboardPollInterval: NodeJS.Timeout | null = null
+
+function startClipboardPolling(): void {
+  if (clipboardPollInterval) return
+  lastClipboardText = clipboard.readText()
+  clipboardPollInterval = setInterval(() => {
+    try {
+      const text = clipboard.readText()
+      if (suppressNextClipboard) {
+        suppressNextClipboard = false
+        lastClipboardText = text
+        return
+      }
+      if (text && text !== lastClipboardText) {
+        lastClipboardText = text
+        sendToPhone({ type: 'SET_CLIPBOARD', text })
+      }
+    } catch {
+      // clipboard read can fail if no content
+    }
+  }, 1000)
+}
+
+function stopClipboardPolling(): void {
+  if (clipboardPollInterval) {
+    clearInterval(clipboardPollInterval)
+    clipboardPollInterval = null
+  }
+}
 
 export function startWebSocketServer(): void {
   wss = new WebSocketServer({ port: 8765 })
@@ -106,6 +140,9 @@ export function startWebSocketServer(): void {
       }
     })
   }, 30000)
+
+  // Start clipboard polling when server is up
+  startClipboardPolling()
 }
 
 const activeFileStreams = new Map<string, fs.WriteStream>()
@@ -147,6 +184,7 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
         let filePath = ''
         if (fileType === 'photo') {
           const photosDir = join(app.getPath('userData'), 'photos')
+          fs.mkdirSync(photosDir, { recursive: true })
           filePath = join(photosDir, `${fileId}.jpg`)
         } else {
           filePath = join(os.homedir(), 'Downloads', fileName)
@@ -226,8 +264,8 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
 
     case 'CALL_HISTORY': {
       const calls = (msg.calls as Array<Record<string, unknown>>) || []
-      const normalized = calls.map((c) => ({
-        id: (c.id as string) || `call_${Date.now()}`,
+      const normalized = calls.map((c, index) => ({
+        id: (c.id as string) || `call_${Date.now()}_${index}`,
         number: (c.number as string) || '',
         name: (c.name as string) || '',
         callType: (c.callType as string) || 'incoming',
@@ -321,8 +359,19 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
     case 'CLIPBOARD_CHANGED': {
       const text = msg.text as string
       if (text) {
+        // Set suppress flag so the PC clipboard poller skips echoing this back to phone
+        suppressNextClipboard = true
         clipboard.writeText(text)
         emitToRenderer('phone-event', { type: 'CLIPBOARD_CHANGED', data: { text } })
+      }
+      break
+    }
+
+    case 'NOTIFICATION_REMOVED': {
+      const id = msg.id as string
+      if (id) {
+        dismissNotification(id)
+        emitToRenderer('phone-event', { type: 'NOTIFICATION_REMOVED', data: { id } })
       }
       break
     }
@@ -361,6 +410,7 @@ export function stopWebSocketServer(): void {
     clearInterval(pingInterval)
     pingInterval = null
   }
+  stopClipboardPolling()
   clients.forEach((_, ws) => ws.terminate())
   clients.clear()
   wss?.close()

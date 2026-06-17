@@ -15,7 +15,9 @@ import {
   saveApps,
   dismissNotification,
   saveCalendarEvents,
-  readData
+  readData,
+  setDatabaseEncryptionKey,
+  clearDatabaseEncryptionKey
 } from './database'
 import { emitToRenderer } from './ipc'
 import { showNotification, showCallNotification } from './notifications'
@@ -130,7 +132,6 @@ export function startWebSocketServer(): void {
                 console.log('[WS] Handshake complete. Derived AES-256 key successfully.')
 
                 // Activate database encryption with this key
-                const { setDatabaseEncryptionKey } = require('./database')
                 setDatabaseEncryptionKey(derivedKey)
 
                 // Notify renderer that connection has changed (so it updates tabs/status)
@@ -155,7 +156,6 @@ export function startWebSocketServer(): void {
       console.log(`[WS] Client disconnected: ${remoteAddr}`)
       clients.delete(ws)
       if (clients.size === 0) {
-        const { clearDatabaseEncryptionKey } = require('./database')
         clearDatabaseEncryptionKey()
       }
       emitToRenderer('connection-changed', {

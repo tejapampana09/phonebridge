@@ -18,9 +18,11 @@ import {
   addContact,
   deleteContact,
   deletePhoto,
-  getCalendarEvents
+  getCalendarEvents,
+  clearAllData,
+  markThreadRead
 } from './database'
-import { sendToPhone, getConnectedCount, getConnectedDeviceNames } from './server'
+import { sendToPhone, getConnectedCount, getConnectedDeviceNames, disconnectAllClients } from './server'
 import { isBluetoothAvailable, sendViaBluetooth, isBluetoothConnected, disconnectBluetoothClient } from './bluetooth'
 
 let mainWindow: BrowserWindow | null = null
@@ -114,8 +116,6 @@ export function registerIpcHandlers(): void {
   // 2.1 Unlink Device
   ipcMain.handle('unlink-device', async () => {
     console.log('[IPC] Unlinking device...')
-    const { disconnectAllClients } = require('./server')
-    const { clearAllData } = require('./database')
 
     disconnectBluetoothClient()
     disconnectAllClients()
@@ -284,7 +284,6 @@ export function registerIpcHandlers(): void {
 
   // 4.9. Mark thread as read
   ipcMain.handle('mark-thread-read', async (_, threadId: string) => {
-    const { markThreadRead } = require('./database')
     markThreadRead(threadId)
     return true
   })

@@ -135,13 +135,7 @@ export function registerIpcHandlers(): void {
     console.log(`[IPC] Sending SMS to ${to}: ${message}`)
     
     // Try sending over WS first, fallback to Bluetooth
-    let success = false
-    if (getConnectedCount() > 0) {
-      sendToPhone(payload)
-      success = true
-    } else if (isBluetoothAvailable()) {
-      success = sendViaBluetooth(payload)
-    }
+    const success = sendMsgToPhone(payload)
 
     if (success) {
       const now = new Date().toISOString()
@@ -180,15 +174,7 @@ export function registerIpcHandlers(): void {
     console.log(`[IPC] Dismissing notification ${id}`)
     
     dbDismissNotification(id)
-    
-    let success = false
-    if (getConnectedCount() > 0) {
-      sendToPhone(payload)
-      success = true
-    } else if (isBluetoothAvailable()) {
-      success = sendViaBluetooth(payload)
-    }
-    return success
+    return sendMsgToPhone(payload)
   })
 
   // 4.5. Dial Number from PC
@@ -198,15 +184,7 @@ export function registerIpcHandlers(): void {
       number
     }
     console.log(`[IPC] Dialing number: ${number}`)
-    
-    let success = false
-    if (getConnectedCount() > 0) {
-      sendToPhone(payload)
-      success = true
-    } else if (isBluetoothAvailable()) {
-      success = sendViaBluetooth(payload)
-    }
-    return success
+    return sendMsgToPhone(payload)
   })
 
   // 4.6. Reply to Notification from PC
@@ -217,15 +195,7 @@ export function registerIpcHandlers(): void {
       message
     }
     console.log(`[IPC] Replying to notification ${id}: ${message}`)
-    
-    let success = false
-    if (getConnectedCount() > 0) {
-      sendToPhone(payload)
-      success = true
-    } else if (isBluetoothAvailable()) {
-      success = sendViaBluetooth(payload)
-    }
-    return success
+    return sendMsgToPhone(payload)
   })
 
   // Trigger Notification Action
@@ -237,14 +207,7 @@ export function registerIpcHandlers(): void {
       message
     }
     console.log(`[IPC] Triggering notification action for ${id}, index ${index}, msg: ${message}`)
-    let success = false
-    if (getConnectedCount() > 0) {
-      sendToPhone(payload)
-      success = true
-    } else if (isBluetoothAvailable()) {
-      success = sendViaBluetooth(payload)
-    }
-    return success
+    return sendMsgToPhone(payload)
   })
 
   // 4.7. Clipboard handlers
@@ -259,27 +222,13 @@ export function registerIpcHandlers(): void {
       text
     }
     console.log(`[IPC] Sending clipboard to phone: ${text}`)
-    let success = false
-    if (getConnectedCount() > 0) {
-      sendToPhone(payload)
-      success = true
-    } else if (isBluetoothAvailable()) {
-      success = sendViaBluetooth(payload)
-    }
-    return success
+    return sendMsgToPhone(payload)
   })
 
   // 4.8. App launcher handler
   ipcMain.handle('launch-app', async (_, packageName: string) => {
     const payload = { type: 'LAUNCH_APP', package: packageName }
-    let success = false
-    if (getConnectedCount() > 0) {
-      sendToPhone(payload)
-      success = true
-    } else if (isBluetoothAvailable()) {
-      success = sendViaBluetooth(payload)
-    }
-    return success
+    return sendMsgToPhone(payload)
   })
 
   // 4.9. Mark thread as read

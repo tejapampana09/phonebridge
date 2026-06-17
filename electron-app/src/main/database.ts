@@ -1,9 +1,24 @@
 import { app } from 'electron'
 import { join } from 'path'
 import * as fs from 'fs'
+import { encryptAES_GCM, decryptAES_GCM } from './encryption'
 
 const dbPath = join(app.getPath('userData'), 'phonebridge_db.json')
 const tempDbPath = join(app.getPath('userData'), 'phonebridge_db.tmp')
+
+let databaseAesKey: Buffer | null = null
+
+export function setDatabaseEncryptionKey(key: Buffer): void {
+  databaseAesKey = key
+  // Force reload database cache from disk now that we have the key
+  dbCache = null
+  readData()
+}
+
+export function clearDatabaseEncryptionKey(): void {
+  databaseAesKey = null
+  dbCache = null
+}
 
 export interface NotificationRecord {
   id: string
@@ -15,6 +30,7 @@ export interface NotificationRecord {
   icon?: string
   dismissed?: boolean
   replyable?: boolean
+  actions?: Array<{ index: number; title: string; isReply: boolean }>
 }
 
 export interface CallRecord {
@@ -52,6 +68,8 @@ export interface PhotoRecord {
   size: number
   timestamp: string
   thumbnail?: string
+  isVideo?: boolean
+  duration?: number
 }
 
 export interface DeviceStatusRecord {
@@ -66,12 +84,23 @@ export interface ContactRecord {
   id: string
   name: string
   number: string
+  avatar?: string
 }
 
 export interface AppRecord {
   name: string
   package: string
   icon?: string
+}
+
+export interface CalendarEventRecord {
+  id: string
+  title: string
+  description: string
+  start: string
+  end: string
+  location: string
+  allDay: boolean
 }
 
 interface DatabaseSchema {
@@ -83,6 +112,7 @@ interface DatabaseSchema {
   device_status: DeviceStatusRecord
   contacts: ContactRecord[]
   apps: AppRecord[]
+  calendar_events: CalendarEventRecord[]
 }
 
 const initialData: DatabaseSchema = {
@@ -99,18 +129,37 @@ const initialData: DatabaseSchema = {
     deviceName: 'Android Phone'
   },
   contacts: [],
-  apps: []
+  apps: [],
+  calendar_events: []
 }
 
 let dbCache: DatabaseSchema | null = null
 
 // Helper: read data from JSON file
-function readData(): DatabaseSchema {
+export function readData(): DatabaseSchema {
   if (dbCache) return dbCache
+
+  if (!databaseAesKey) {
+    // Return empty temporary cache when disconnected/unpaired
+    return JSON.parse(JSON.stringify(initialData))
+  }
+
   try {
     if (fs.existsSync(dbPath)) {
       const content = fs.readFileSync(dbPath, 'utf8')
-      dbCache = JSON.parse(content)
+      if (content.trim().startsWith('{')) {
+        const parsed = JSON.parse(content)
+        if (parsed.encrypted === true) {
+          const decrypted = decryptAES_GCM(parsed.ciphertext, parsed.iv, databaseAesKey)
+          dbCache = JSON.parse(decrypted)
+        } else {
+          // Plaintext JSON file (upgrade to encrypted)
+          dbCache = parsed
+          writeData(dbCache!)
+        }
+      } else {
+        dbCache = JSON.parse(content)
+      }
       return dbCache!
     }
   } catch (err) {
@@ -123,8 +172,20 @@ function readData(): DatabaseSchema {
 // Helper: write data atomically
 function writeData(data: DatabaseSchema): void {
   dbCache = data
+  if (!databaseAesKey) {
+    console.warn('[DB] Skip writing to disk: No database encryption key set.')
+    return
+  }
+
   try {
-    fs.writeFileSync(tempDbPath, JSON.stringify(data, null, 2), 'utf8')
+    const plaintext = JSON.stringify(data, null, 2)
+    const encrypted = encryptAES_GCM(plaintext, databaseAesKey)
+    const payload = {
+      encrypted: true,
+      iv: encrypted.iv,
+      ciphertext: encrypted.ciphertext
+    }
+    fs.writeFileSync(tempDbPath, JSON.stringify(payload, null, 2), 'utf8')
     fs.renameSync(tempDbPath, dbPath)
   } catch (err) {
     console.error('[DB] Error writing database file atomically:', err)
@@ -147,6 +208,7 @@ export function initDatabase(): void {
     if (!data.photos) { data.photos = []; dirty = true }
     if (!data.contacts) { data.contacts = []; dirty = true }
     if (!data.apps) { data.apps = []; dirty = true }
+    if (!data.calendar_events) { data.calendar_events = []; dirty = true }
     if (!data.device_status) { data.device_status = { ...initialData.device_status }; dirty = true }
     if (dirty) {
       writeData(data)
@@ -169,7 +231,8 @@ export function saveNotification(notif: NotificationRecord): void {
     timestamp: notif.timestamp,
     icon: notif.icon || undefined,
     dismissed: false,
-    replyable: notif.replyable ?? false
+    replyable: notif.replyable ?? false,
+    actions: notif.actions
   }
 
   if (idx !== -1) {
@@ -284,6 +347,31 @@ export function markThreadRead(threadId: string): void {
   }
 }
 
+export function deleteSmsMessage(id: string): void {
+  const data = readData()
+  const msgToDelete = data.sms_messages.find(m => m.id === id)
+  data.sms_messages = data.sms_messages.filter(m => m.id !== id)
+  
+  if (msgToDelete) {
+    const threadId = msgToDelete.threadId
+    const remainingMsgs = data.sms_messages.filter(m => m.threadId === threadId)
+    const threadIdx = data.sms_threads.findIndex(t => t.id === threadId)
+    
+    if (threadIdx !== -1) {
+      if (remainingMsgs.length > 0) {
+        const sorted = [...remainingMsgs].sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        )
+        data.sms_threads[threadIdx].lastMessage = sorted[0].body
+        data.sms_threads[threadIdx].timestamp = sorted[0].timestamp
+      } else {
+        data.sms_threads = data.sms_threads.filter(t => t.id !== threadId)
+      }
+    }
+  }
+  writeData(data)
+}
+
 // ─── Photos ──────────────────────────────────────────────────────────────────
 
 export function savePhotos(photos: PhotoRecord[]): void {
@@ -295,7 +383,9 @@ export function savePhotos(photos: PhotoRecord[]): void {
       name: photo.name,
       size: photo.size,
       timestamp: photo.timestamp,
-      thumbnail: photo.thumbnail || undefined
+      thumbnail: photo.thumbnail || undefined,
+      isVideo: photo.isVideo,
+      duration: photo.duration
     }
     if (idx !== -1) {
       data.photos[idx] = newPhoto
@@ -309,6 +399,12 @@ export function savePhotos(photos: PhotoRecord[]): void {
 export function getPhotos(): PhotoRecord[] {
   const data = readData()
   return data.photos.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+}
+
+export function deletePhoto(id: string): void {
+  const data = readData()
+  data.photos = data.photos.filter((p) => p.id !== id)
+  writeData(data)
 }
 
 // ─── Device Status ────────────────────────────────────────────────────────────
@@ -362,6 +458,18 @@ export function getContacts(): ContactRecord[] {
   return data.contacts || []
 }
 
+export function addContact(c: ContactRecord): void {
+  const data = readData()
+  data.contacts.push(c)
+  writeData(data)
+}
+
+export function deleteContact(id: string): void {
+  const data = readData()
+  data.contacts = data.contacts.filter(c => c.id !== id)
+  writeData(data)
+}
+
 // ─── Apps ────────────────────────────────────────────────────────────────────
 
 export function saveApps(apps: AppRecord[]): void {
@@ -373,6 +481,17 @@ export function saveApps(apps: AppRecord[]): void {
 export function getApps(): AppRecord[] {
   const data = readData()
   return data.apps || []
+}
+
+export function saveCalendarEvents(events: CalendarEventRecord[]): void {
+  const data = readData()
+  data.calendar_events = events
+  writeData(data)
+}
+
+export function getCalendarEvents(): CalendarEventRecord[] {
+  const data = readData()
+  return data.calendar_events || []
 }
 
 export function clearAllData(): void {

@@ -12,7 +12,13 @@ import {
   saveSmses,
   getContacts,
   getApps,
-  dismissNotification as dbDismissNotification
+  dismissNotification as dbDismissNotification,
+  deleteSmsMessage,
+  readData,
+  addContact,
+  deleteContact,
+  deletePhoto,
+  getCalendarEvents
 } from './database'
 import { sendToPhone, getConnectedCount, getConnectedDeviceNames } from './server'
 import { isBluetoothAvailable, sendViaBluetooth, isBluetoothConnected, disconnectBluetoothClient } from './bluetooth'
@@ -212,6 +218,25 @@ export function registerIpcHandlers(): void {
     return success
   })
 
+  // Trigger Notification Action
+  ipcMain.handle('trigger-notification-action', async (_, { id, index, message }) => {
+    const payload = {
+      type: 'NOTIFICATION_ACTION',
+      id,
+      index,
+      message
+    }
+    console.log(`[IPC] Triggering notification action for ${id}, index ${index}, msg: ${message}`)
+    let success = false
+    if (getConnectedCount() > 0) {
+      sendToPhone(payload)
+      success = true
+    } else if (isBluetoothAvailable()) {
+      success = sendViaBluetooth(payload)
+    }
+    return success
+  })
+
   // 4.7. Clipboard handlers
   ipcMain.handle('get-clipboard', () => clipboard.readText())
   ipcMain.handle('set-clipboard', (_, text: string) => {
@@ -292,11 +317,16 @@ export function registerIpcHandlers(): void {
   // get-photo-data
   ipcMain.handle('get-photo-data', async (_, id) => {
     try {
+      const dbData = readData()
+      const pMeta = dbData.photos.find(p => p.id === id)
+      const ext = pMeta && pMeta.isVideo ? 'mp4' : 'jpg'
+      const mime = pMeta && pMeta.isVideo ? 'video/mp4' : 'image/jpeg'
+      
       const photosDir = join(app.getPath('userData'), 'photos')
-      const filePath = join(photosDir, `${id}.jpg`)
+      const filePath = join(photosDir, `${id}.${ext}`)
       if (fs.existsSync(filePath)) {
         const data = fs.readFileSync(filePath)
-        return `data:image/jpeg;base64,${data.toString('base64')}`
+        return `data:${mime};base64,${data.toString('base64')}`
       }
     } catch (err) {
       console.error('Failed to read local photo:', err)
@@ -366,6 +396,20 @@ export function registerIpcHandlers(): void {
         } else if (isBluetoothAvailable()) {
           sendViaBluetooth(chunkPayload)
         }
+
+        // Emit progress update to renderer
+        emitToRenderer('phone-event', {
+          type: 'FILE_TRANSFER_PROGRESS',
+          data: {
+            fileId,
+            fileName,
+            direction: 'upload',
+            progress: Math.round(((i + 1) / totalChunks) * 100),
+            chunkIndex: i,
+            totalChunks
+          }
+        })
+
         // Delay to prevent network packet congestion
         await new Promise((resolve) => setTimeout(resolve, 15))
       }
@@ -380,6 +424,19 @@ export function registerIpcHandlers(): void {
       } else if (isBluetoothAvailable()) {
         sendViaBluetooth(endPayload)
       }
+      
+      emitToRenderer('phone-event', {
+        type: 'FILE_TRANSFER_PROGRESS',
+        data: {
+          fileId,
+          fileName,
+          direction: 'upload',
+          progress: 100,
+          chunkIndex: totalChunks,
+          totalChunks
+        }
+      })
+
       console.log(`[IPC] File sent: ${fileName}`)
       return true
     } catch (err) {
@@ -431,5 +488,131 @@ export function registerIpcHandlers(): void {
       success = sendViaBluetooth(payload)
     }
     return success
+  })
+
+  // search-sms handler
+  ipcMain.handle('search-sms', async (_, query: string) => {
+    const data = readData()
+    const q = query.toLowerCase()
+    return data.sms_messages.filter(m =>
+      m.body.toLowerCase().includes(q) ||
+      (m.name && m.name.toLowerCase().includes(q)) ||
+      (m.address && m.address.includes(q))
+    ).slice(0, 100)
+  })
+
+  // delete-sms-message handler
+  ipcMain.handle('delete-sms-message', async (_, id: string) => {
+    deleteSmsMessage(id)
+    sendToPhone({ type: 'DELETE_SMS', msgId: id })
+    return true
+  })
+
+  // create-contact handler
+  ipcMain.handle('create-contact', async (_, { name, number }) => {
+    sendToPhone({ type: 'CREATE_CONTACT', name, number })
+    return true
+  })
+
+  // update-contact handler
+  ipcMain.handle('update-contact', async (_, { contactId, name, number }) => {
+    sendToPhone({ type: 'UPDATE_CONTACT', contactId, name, number })
+    return true
+  })
+
+  // delete-contact handler
+  ipcMain.handle('delete-contact', async (_, contactId: string) => {
+    deleteContact(contactId)
+    sendToPhone({ type: 'DELETE_CONTACT', contactId })
+    return true
+  })
+
+  // list-phone-files handler
+  ipcMain.handle('list-phone-files', async (_, path: string) => {
+    sendToPhone({ type: 'LIST_FILES', path })
+    return true
+  })
+
+  // download-phone-file handler
+  ipcMain.handle('download-phone-file', async (_, filePath: string) => {
+    sendToPhone({ type: 'REQUEST_FILE_PATH', filePath })
+    return true
+  })
+
+  // delete-phone-file handler
+  ipcMain.handle('delete-phone-file', async (_, filePath: string) => {
+    sendToPhone({ type: 'DELETE_FILE', filePath })
+    return true
+  })
+
+  // rename-phone-file handler
+  ipcMain.handle('rename-phone-file', async (_, { filePath, newName }) => {
+    sendToPhone({ type: 'RENAME_FILE', filePath, newName })
+    return true
+  })
+
+  // delete-photo handler
+  ipcMain.handle('delete-photo', async (_, id: string) => {
+    deletePhoto(id)
+    sendToPhone({ type: 'DELETE_PHOTO', fileId: id })
+    return true
+  })
+
+  // get-calendar-events handler
+  ipcMain.handle('get-calendar-events', async () => {
+    return getCalendarEvents()
+  })
+
+  // create-calendar-event handler
+  ipcMain.handle('create-calendar-event', async (_, { title, description, start, end, location }) => {
+    sendToPhone({ type: 'CREATE_EVENT', title, description, start, end, location })
+    return true
+  })
+
+  // delete-calendar-event handler
+  ipcMain.handle('delete-calendar-event', async (_, eventId: string) => {
+    sendToPhone({ type: 'DELETE_EVENT', eventId })
+    return true
+  })
+
+  // toggle-flashlight
+  ipcMain.handle('toggle-flashlight', async (_, enabled: boolean) => {
+    sendToPhone({ type: 'TOGGLE_FLASHLIGHT', enabled })
+    return true
+  })
+
+  // ring-phone
+  ipcMain.handle('ring-phone', async () => {
+    sendToPhone({ type: 'RING_PHONE' })
+    return true
+  })
+
+  // stop-ringing
+  ipcMain.handle('stop-ringing', async () => {
+    sendToPhone({ type: 'STOP_RINGING' })
+    return true
+  })
+
+  // locate-device
+  ipcMain.handle('locate-device', async () => {
+    sendToPhone({ type: 'LOCATE_DEVICE' })
+    return true
+  })
+
+  // start-mirroring
+  ipcMain.handle('start-mirroring', async () => {
+    sendToPhone({ type: 'START_MIRRORING' })
+    return true
+  })
+
+  // stop-mirroring
+  ipcMain.handle('stop-mirroring', async () => {
+    sendToPhone({ type: 'STOP_MIRRORING' })
+    return true
+  })
+
+  // check-for-updates
+  ipcMain.handle('check-for-updates', async () => {
+    return { success: true, updateAvailable: false, version: '1.0.0' }
   })
 }

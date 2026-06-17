@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { PhoneNotification, CallRecord, SmsThread, PhotoMeta, DeviceStatus, ContactRecord, AppRecord } from '../types'
+import { PhoneNotification, CallRecord, SmsThread, PhotoMeta, DeviceStatus, ContactRecord, AppRecord, CalendarEventRecord } from '../types'
 
 declare global {
   interface Window {
@@ -15,6 +15,7 @@ export function useDatabase() {
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null)
   const [contacts, setContacts] = useState<ContactRecord[]>([])
   const [apps, setApps] = useState<AppRecord[]>([])
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEventRecord[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchNotifications = useCallback(async () => {
@@ -97,6 +98,15 @@ export function useDatabase() {
     }
   }, [])
 
+  const fetchCalendarEvents = useCallback(async () => {
+    try {
+      const data = await window.api.getCalendarEvents()
+      setCalendarEvents(data || [])
+    } catch (err) {
+      console.error('Error fetching calendar events:', err)
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     await Promise.all([
@@ -106,10 +116,11 @@ export function useDatabase() {
       fetchPhotos(),
       fetchDeviceStatus(),
       fetchContacts(),
-      fetchApps()
+      fetchApps(),
+      fetchCalendarEvents()
     ])
     setLoading(false)
-  }, [fetchNotifications, fetchCalls, fetchSmsThreads, fetchPhotos, fetchDeviceStatus, fetchContacts, fetchApps])
+  }, [fetchNotifications, fetchCalls, fetchSmsThreads, fetchPhotos, fetchDeviceStatus, fetchContacts, fetchApps, fetchCalendarEvents])
 
   useEffect(() => {
     refreshAll()
@@ -143,6 +154,8 @@ export function useDatabase() {
         fetchContacts()
       } else if (type === 'APPS_HISTORY') {
         fetchApps()
+      } else if (type === 'CALENDAR_HISTORY') {
+        fetchCalendarEvents()
       }
     })
 
@@ -174,6 +187,8 @@ export function useDatabase() {
     fetchPhotos,
     fetchDeviceStatus,
     fetchContacts,
-    fetchApps
+    fetchApps,
+    calendarEvents,
+    fetchCalendarEvents
   }
 }

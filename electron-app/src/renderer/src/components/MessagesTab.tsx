@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { SmsThread, SmsMessage } from '../types'
-import { MessageSquare, Send, Search, User, Loader2 } from 'lucide-react'
+import { MessageSquare, Send, Search, User, Loader2, Trash2 } from 'lucide-react'
 
 interface MessagesTabProps {
   threads: SmsThread[]
@@ -13,10 +13,34 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({ threads, refreshThread
   const [messages, setMessages] = useState<SmsMessage[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [inputText, setInputText] = useState('')
+  const [visibleMessagesCount, setVisibleMessagesCount] = useState(50)
   const [sending, setSending] = useState(false)
   const [composing, setComposing] = useState(false)
   const [newNumber, setNewNumber] = useState('')
   const [composingThread, setComposingThread] = useState<SmsThread | null>(null)
+
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([])
+      return
+    }
+    const performSearch = async () => {
+      setSearching(true)
+      try {
+        const results = await window.api.searchSms(searchQuery)
+        setSearchResults(results || [])
+      } catch (err) {
+        console.error('Search failed:', err)
+      } finally {
+        setSearching(false)
+      }
+    }
+    const timer = setTimeout(performSearch, 150)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
 
   const handleComposeSubmit = (number: string) => {
     const trimmed = number.trim()
@@ -76,6 +100,28 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({ threads, refreshThread
       setLoadingMessages(false)
     }
   }, [composingThread])
+
+  useEffect(() => {
+    setVisibleMessagesCount(50)
+  }, [selectedThreadId])
+
+  const visibleMessages = messages.slice(-visibleMessagesCount)
+
+  const handleChatScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget
+    if (target.scrollTop <= 10) {
+      if (visibleMessagesCount < messages.length) {
+        const oldScrollHeight = target.scrollHeight
+        setVisibleMessagesCount((prev) => {
+          const next = prev + 50
+          setTimeout(() => {
+            target.scrollTop = target.scrollHeight - oldScrollHeight
+          }, 5)
+          return next
+        })
+      }
+    }
+  }
 
   // Auto-scroll to bottom of chat
   const scrollToBottom = () => {
@@ -234,47 +280,123 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({ threads, refreshThread
         </div>
 
         {/* Threads List */}
-        <div className="flex-1 overflow-y-auto divide-y divide-border/30">
-          {filteredThreads.length === 0 ? (
-            <div className="p-6 text-center text-dim space-y-2">
-              <MessageSquare size={32} className="mx-auto opacity-20" />
-              <p className="text-xs">No conversations</p>
-            </div>
-          ) : (
-            filteredThreads.map((thread) => {
-              const isSelected = thread.id === selectedThreadId
-              const initials = (thread.name || 'U').charAt(0).toUpperCase()
-              return (
-                <div
-                  key={thread.id}
-                  onClick={() => setSelectedThreadId(thread.id)}
-                  className={`p-4 flex space-x-3 hover:bg-hover cursor-pointer border-l-2 transition-all ${
-                    isSelected ? 'bg-hover border-accent' : 'border-transparent'
-                  }`}
-                >
-                  <div className="w-10 h-10 rounded-full bg-card border border-border flex items-center justify-center text-sm font-bold text-accent flex-shrink-0 relative">
-                    {initials}
-                    {thread.unread && (
-                      <span className="absolute top-0 right-0 h-2.5 w-2.5 rounded-full bg-accent border border-sidebar" />
-                    )}
+        {searchQuery.length > 0 ? (
+          <div className="flex-1 overflow-y-auto divide-y divide-border/30">
+            {searching ? (
+              <div className="p-6 text-center text-dim space-y-2">
+                <Loader2 className="animate-spin mx-auto text-accent" size={20} />
+                <p className="text-xs">Searching messages...</p>
+              </div>
+            ) : (() => {
+              const groupedResults: { [threadId: string]: { threadName: string, threadAddress: string, msgs: any[] } } = {}
+              searchResults.forEach(m => {
+                if (!groupedResults[m.threadId]) {
+                  const thread = threads.find(t => t.id === m.threadId)
+                  groupedResults[m.threadId] = {
+                    threadName: thread?.name || m.name || m.address,
+                    threadAddress: thread?.address || m.address,
+                    msgs: []
+                  }
+                }
+                groupedResults[m.threadId].msgs.push(m)
+              })
+
+              if (Object.keys(groupedResults).length === 0) {
+                return (
+                  <div className="p-6 text-center text-dim space-y-2">
+                    <Search size={32} className="mx-auto opacity-20" />
+                    <p className="text-xs">No matching messages</p>
                   </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-baseline">
-                      <h4 className={`text-xs truncate ${thread.unread ? 'text-white font-bold' : 'text-white'}`}>
-                        {thread.name || thread.address}
-                      </h4>
-                      <span className="text-[10px] text-dim">{formatTime(thread.timestamp)}</span>
-                    </div>
-                    <p className={`text-xs mt-1 truncate ${thread.unread ? 'text-white font-semibold' : 'text-secondary'}`}>
-                      {thread.lastMessage}
-                    </p>
+                )
+              }
+
+              const highlightText = (text: string, highlight: string) => {
+                if (!highlight.trim()) return text
+                const parts = text.split(new RegExp(`(${highlight.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'))
+                return (
+                  <span>
+                    {parts.map((part, i) => 
+                      part.toLowerCase() === highlight.toLowerCase() ? (
+                        <mark key={i} className="bg-accent/30 text-white font-semibold rounded px-0.5">{part}</mark>
+                      ) : (
+                        part
+                      )
+                    )}
+                  </span>
+                )
+              }
+
+              return Object.entries(groupedResults).map(([threadId, group]) => (
+                <div key={threadId} className="bg-primary/5">
+                  <div className="px-4 py-2 bg-sidebar border-b border-border/20 text-[10px] font-bold text-accent tracking-wider truncate uppercase">
+                    {group.threadName}
+                  </div>
+                  <div className="divide-y divide-border/10">
+                    {group.msgs.map((msg) => (
+                      <div
+                        key={msg.id}
+                        onClick={() => {
+                          setSelectedThreadId(threadId)
+                        }}
+                        className="p-4 hover:bg-hover cursor-pointer transition-colors space-y-1"
+                      >
+                        <div className="flex justify-between items-baseline">
+                          <span className="text-[10px] text-dim">{msg.direction === 'out' ? 'Sent' : 'Received'}</span>
+                          <span className="text-[9px] text-dim">{formatTime(msg.timestamp)}</span>
+                        </div>
+                        <p className="text-xs text-secondary leading-relaxed break-words">
+                          {highlightText(msg.body, searchQuery)}
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              )
-            })
-          )}
-        </div>
+              ))
+            })()}
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto divide-y divide-border/30">
+            {filteredThreads.length === 0 ? (
+              <div className="p-6 text-center text-dim space-y-2">
+                <MessageSquare size={32} className="mx-auto opacity-20" />
+                <p className="text-xs">No conversations</p>
+              </div>
+            ) : (
+              filteredThreads.map((thread) => {
+                const isSelected = thread.id === selectedThreadId
+                const initials = (thread.name || 'U').charAt(0).toUpperCase()
+                return (
+                  <div
+                    key={thread.id}
+                    onClick={() => setSelectedThreadId(thread.id)}
+                    className={`p-4 flex space-x-3 hover:bg-hover cursor-pointer border-l-2 transition-all ${
+                      isSelected ? 'bg-hover border-accent' : 'border-transparent'
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-full bg-card border border-border flex items-center justify-center text-sm font-bold text-accent flex-shrink-0 relative">
+                      {initials}
+                      {thread.unread && (
+                        <span className="absolute top-0 right-0 h-2.5 w-2.5 rounded-full bg-accent border border-sidebar" />
+                      )}
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-baseline">
+                        <h4 className={`text-xs truncate ${thread.unread ? 'text-white font-bold' : 'text-white'}`}>
+                          {thread.name || thread.address}
+                        </h4>
+                        <span className="text-[10px] text-dim">{formatTime(thread.timestamp)}</span>
+                      </div>
+                      <p className={`text-xs mt-1 truncate ${thread.unread ? 'text-white font-semibold' : 'text-secondary'}`}>
+                        {thread.lastMessage}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        )}
 
       </div>
 
@@ -295,7 +417,10 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({ threads, refreshThread
             </div>
 
             {/* Chat Messages Log */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div 
+              onScroll={handleChatScroll}
+              className="flex-1 overflow-y-auto p-6 space-y-4"
+            >
               {loadingMessages ? (
                 <div className="h-full flex items-center justify-center text-dim space-x-2">
                   <Loader2 className="animate-spin text-accent" size={20} />
@@ -306,21 +431,61 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({ threads, refreshThread
                   No messages in this chat.
                 </div>
               ) : (
-                messages.map((msg) => {
+                visibleMessages.map((msg) => {
                   const isSentByMe = msg.direction === 'out'
                   return (
                     <div
                       key={msg.id}
-                      className={`flex flex-col ${isSentByMe ? 'items-end' : 'items-start'}`}
+                      className={`flex flex-col ${isSentByMe ? 'items-end' : 'items-start'} group relative`}
                     >
-                      <div
-                        className={`max-w-[70%] px-4 py-2.5 rounded-xl text-xs leading-relaxed break-words shadow ${
-                          isSentByMe
-                            ? 'bg-accent text-white rounded-tr-none'
-                            : 'bg-card text-secondary border border-border/80 rounded-tl-none'
-                        }`}
-                      >
-                        {msg.body}
+                      <div className="flex items-center space-x-2 max-w-[70%]">
+                        {isSentByMe && (
+                          <button
+                            onClick={async () => {
+                              if (confirm('Delete this message?')) {
+                                try {
+                                  setMessages(prev => prev.filter(m => m.id !== msg.id))
+                                  await window.api.deleteSmsMessage(msg.id)
+                                  refreshThreads()
+                                } catch (err) {
+                                  console.error(err)
+                                }
+                              }
+                            }}
+                            className="opacity-0 group-hover:opacity-100 text-dim hover:text-danger transition-opacity p-1 rounded hover:bg-hover flex-shrink-0"
+                            title="Delete message"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                        <div
+                          className={`px-4 py-2.5 rounded-xl text-xs leading-relaxed break-words shadow ${
+                            isSentByMe
+                              ? 'bg-accent text-white rounded-tr-none'
+                              : 'bg-card text-secondary border border-border/80 rounded-tl-none'
+                          }`}
+                        >
+                          {msg.body}
+                        </div>
+                        {!isSentByMe && (
+                          <button
+                            onClick={async () => {
+                              if (confirm('Delete this message?')) {
+                                try {
+                                  setMessages(prev => prev.filter(m => m.id !== msg.id))
+                                  await window.api.deleteSmsMessage(msg.id)
+                                  refreshThreads()
+                                } catch (err) {
+                                  console.error(err)
+                                }
+                              }
+                            }}
+                            className="opacity-0 group-hover:opacity-100 text-dim hover:text-danger transition-opacity p-1 rounded hover:bg-hover flex-shrink-0"
+                            title="Delete message"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
                       </div>
                       <span className="text-[9px] text-dim mt-1 px-1">
                         {formatTime(msg.timestamp)}

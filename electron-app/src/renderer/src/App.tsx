@@ -21,14 +21,18 @@ import {
   Link,
   User,
   FileUp,
-  Settings
+  Settings,
+  Calendar as CalendarIcon
 } from 'lucide-react'
+import { CalendarTab } from './components/CalendarTab'
+import { MirroringModal } from './components/MirroringModal'
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabId>('calls')
   const [isPaired, setIsPaired] = useState(false)
   const [incomingCall, setIncomingCall] = useState<{ name: string; number: string } | null>(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [showMirroring, setShowMirroring] = useState(false)
   const [openAtLogin, setOpenAtLogin] = useState(false)
 
   useEffect(() => {
@@ -51,11 +55,13 @@ function App() {
     deviceStatus,
     contacts,
     apps,
+    calendarEvents,
     refreshAll,
     fetchDeviceStatus,
     fetchNotifications,
     fetchCalls,
-    fetchSmsThreads
+    fetchSmsThreads,
+    fetchCalendarEvents
   } = useDatabase()
 
   const checkConnection = async () => {
@@ -255,6 +261,7 @@ function App() {
             onDismissNotification={handleDismissNotification}
             onRequestSync={handleRequestSync}
             onSendReply={handleSendReply}
+            onOpenMirroring={() => setShowMirroring(true)}
           />
 
           {/* Right Work Pane */}
@@ -331,6 +338,17 @@ function App() {
                   <FileUp size={14} />
                   <span>Files</span>
                 </button>
+                <button
+                  onClick={() => setActiveTab('calendar')}
+                  className={`flex items-center space-x-2 border-b-2 px-1 text-sm font-semibold transition-all h-full ${
+                    activeTab === 'calendar'
+                      ? 'border-accent text-accent'
+                      : 'border-transparent text-secondary hover:text-white'
+                  }`}
+                >
+                  <CalendarIcon size={14} />
+                  <span>Calendar</span>
+                </button>
               </div>
 
               {/* Utility Tools */}
@@ -357,6 +375,13 @@ function App() {
               {activeTab === 'photos' && <PhotosTab photos={photos} />}
               {activeTab === 'apps' && <AppsTab apps={apps} />}
               {activeTab === 'files' && <FilesTab />}
+              {activeTab === 'calendar' && (
+                <CalendarTab
+                  calendarEvents={calendarEvents}
+                  refreshEvents={fetchCalendarEvents}
+                  deviceConnected={deviceStatus?.connected || false}
+                />
+              )}
             </div>
 
           </main>
@@ -410,6 +435,30 @@ function App() {
                   className="w-4 h-4 rounded text-accent focus:ring-accent accent-accent cursor-pointer"
                 />
               </div>
+
+              <div className="flex items-center justify-between p-3.5 bg-primary/30 border border-border/60 rounded-xl">
+                <div>
+                  <h4 className="text-xs font-bold text-white">App Version</h4>
+                  <p className="text-[10px] text-dim mt-0.5">Version 1.0.0 (Latest)</p>
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await window.api.checkForUpdates()
+                      if (res && res.success) {
+                        alert(`You are running the latest version (v${res.version}).`)
+                      } else {
+                        alert('Failed to check for updates.')
+                      }
+                    } catch {
+                      alert('Failed to check for updates.')
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-card border border-border hover:bg-hover text-secondary hover:text-white rounded-lg text-[10px] font-bold transition-all"
+                >
+                  Check Updates
+                </button>
+              </div>
             </div>
 
             <div className="mt-8 flex justify-end">
@@ -422,6 +471,10 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+      {/* 5. Screen Mirroring Modal Overlay */}
+      {showMirroring && (
+        <MirroringModal onClose={() => setShowMirroring(false)} />
       )}
 
     </div>

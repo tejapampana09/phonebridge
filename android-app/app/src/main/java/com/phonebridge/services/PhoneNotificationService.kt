@@ -11,6 +11,7 @@ import android.service.notification.StatusBarNotification
 import android.util.Base64
 import android.util.Log
 import com.phonebridge.connection.ConnectionManager
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 
@@ -25,9 +26,9 @@ class PhoneNotificationService : NotificationListenerService() {
     companion object {
         private var instance: PhoneNotificationService? = null
 
-        fun replyToNotification(context: android.content.Context, key: String, message: String): Boolean {
+        fun triggerNotificationAction(context: android.content.Context, key: String, actionIndex: Int, replyText: String? = null): Boolean {
             val service = instance ?: run {
-                Log.e(TAG, "[NOTIFICATION] Reply failed: Service not running")
+                Log.e(TAG, "[NOTIFICATION] Action failed: Service not running")
                 return false
             }
             try {
@@ -35,29 +36,51 @@ class PhoneNotificationService : NotificationListenerService() {
                 for (sbn in activeNotifs) {
                     if (sbn.key == key) {
                         val actions = sbn.notification.actions ?: continue
-                        for (action in actions) {
-                            val remoteInputs = action.remoteInputs ?: continue
-                            for (ri in remoteInputs) {
-                                val intent = android.content.Intent()
+                        if (actionIndex in actions.indices) {
+                            val action = actions[actionIndex]
+                            val intent = android.content.Intent()
+                            val remoteInputs = action.remoteInputs
+                            if (remoteInputs != null && !replyText.isNullOrBlank()) {
                                 val bundle = android.os.Bundle()
-                                bundle.putCharSequence(ri.resultKey, message)
+                                for (ri in remoteInputs) {
+                                    bundle.putCharSequence(ri.resultKey, replyText)
+                                }
                                 android.app.RemoteInput.addResultsToIntent(
-                                    arrayOf(ri),
+                                    remoteInputs,
                                     intent,
                                     bundle
                                 )
-                                action.actionIntent.send(context, 0, intent)
-                                Log.i(TAG, "[NOTIFICATION] Reply success")
-                                return true
+                            }
+                            action.actionIntent.send(context, 0, intent)
+                            Log.i(TAG, "[NOTIFICATION] Action triggered successfully (index=$actionIndex)")
+                            return true
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "[NOTIFICATION] Action failed: Exception", e)
+            }
+            return false
+        }
+
+        fun replyToNotification(context: android.content.Context, key: String, message: String): Boolean {
+            // Find first replyable action
+            val service = instance ?: return false
+            try {
+                val activeNotifs = service.activeNotifications
+                for (sbn in activeNotifs) {
+                    if (sbn.key == key) {
+                        val actions = sbn.notification.actions ?: continue
+                        actions.forEachIndexed { index, action ->
+                            if (action.remoteInputs?.isNotEmpty() == true) {
+                                return triggerNotificationAction(context, key, index, message)
                             }
                         }
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "[NOTIFICATION] Reply failed: Exception", e)
-                return false
+                Log.e(TAG, "Failed in reply delegate", e)
             }
-            Log.e(TAG, "[NOTIFICATION] Reply failed: Notification key not found or no remote input action")
             return false
         }
 
@@ -134,6 +157,16 @@ class PhoneNotificationService : NotificationListenerService() {
                 action.remoteInputs?.isNotEmpty() == true
             } ?: false
 
+            val actionsArray = JSONArray()
+            sbn.notification.actions?.forEachIndexed { index, action ->
+                val actionObj = JSONObject().apply {
+                    put("index", index)
+                    put("title", action.title?.toString() ?: "")
+                    put("isReply", action.remoteInputs?.isNotEmpty() == true)
+                }
+                actionsArray.put(actionObj)
+            }
+
             val notifJson = JSONObject().apply {
                 put("type", "NOTIFICATION")
                 put("id", sbn.key)
@@ -143,6 +176,7 @@ class PhoneNotificationService : NotificationListenerService() {
                 put("message", text)
                 put("timestamp", isoTimestamp)
                 put("replyable", isReplyable)
+                put("actions", actionsArray as Any)
                 if (iconBase64 != null) {
                     put("icon", "data:image/jpeg;base64,$iconBase64")
                 }

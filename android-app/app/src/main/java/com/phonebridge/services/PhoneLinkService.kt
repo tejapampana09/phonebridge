@@ -3,6 +3,7 @@ package com.phonebridge.services
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -87,6 +88,49 @@ class PhoneLinkService : Service() {
     // Lifecycle
     // ──────────────────────────────────────────────────────────────────────────
 
+    private val batteryReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (ConnectionManager.isConnected()) {
+                val status = MessageHandler.buildDeviceStatus(context)
+                ConnectionManager.send(status)
+            }
+        }
+    }
+
+    private var phoneStateListener: android.telephony.PhoneStateListener? = null
+
+    private fun registerSignalStrengthListener() {
+        try {
+            val tm = getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+            phoneStateListener = object : android.telephony.PhoneStateListener() {
+                @Deprecated("Deprecated in Java")
+                override fun onSignalStrengthsChanged(signalStrength: android.telephony.SignalStrength) {
+                    super.onSignalStrengthsChanged(signalStrength)
+                    if (ConnectionManager.isConnected()) {
+                        ConnectionManager.send(MessageHandler.buildDeviceStatus(this@PhoneLinkService))
+                    }
+                }
+            }
+            @Suppress("DEPRECATION")
+            tm.listen(phoneStateListener, android.telephony.PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register signal listener", e)
+        }
+    }
+
+    private fun unregisterSignalStrengthListener() {
+        try {
+            if (phoneStateListener != null) {
+                val tm = getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+                @Suppress("DEPRECATION")
+                tm.listen(phoneStateListener, android.telephony.PhoneStateListener.LISTEN_NONE)
+                phoneStateListener = null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to unregister signal listener", e)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -107,6 +151,11 @@ class PhoneLinkService : Service() {
 
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
         cm.addPrimaryClipChangedListener(clipboardListener)
+
+        // Register dynamic battery and signal listeners
+        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        registerReceiver(batteryReceiver, filter)
+        registerSignalStrengthListener()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -123,6 +172,22 @@ class PhoneLinkService : Service() {
         instance = null
         heartbeatJob?.cancel()
         serviceScope.cancel()
+        
+        try {
+            com.phonebridge.utils.MirroringManager.stopMirroring()
+            com.phonebridge.utils.DeviceActionsHelper.stopRinging(this)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to clean up device actions on service destroy", e)
+        }
+        
+        // Unregister listeners
+        try {
+            unregisterReceiver(batteryReceiver)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to unregister battery receiver", e)
+        }
+        unregisterSignalStrengthListener()
+
         try {
             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             cm.removePrimaryClipChangedListener(clipboardListener)

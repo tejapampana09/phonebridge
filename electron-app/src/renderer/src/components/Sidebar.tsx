@@ -11,7 +11,12 @@ import {
   X,
   Trash2,
   Smartphone,
-  Send
+  Send,
+  Volume2,
+  VolumeX,
+  Flashlight as FlashlightIcon,
+  MapPin,
+  MonitorPlay
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -20,6 +25,7 @@ interface SidebarProps {
   onDismissNotification: (id: string) => void
   onRequestSync: () => void
   onSendReply: (id: string, message: string) => void
+  onOpenMirroring?: () => void
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -27,7 +33,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   notifications,
   onDismissNotification,
   onRequestSync,
-  onSendReply
+  onSendReply,
+  onOpenMirroring
 }) => {
   const isConnected = deviceStatus?.connected || false
   const batteryPercent = deviceStatus?.battery ?? 0
@@ -44,13 +51,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [replyText, setReplyText] = React.useState('')
   const [lastSyncedClip, setLastSyncedClip] = React.useState('')
 
+  // Device Actions State
+  const [flashlightOn, setFlashlightOn] = React.useState(false)
+  const [isRinging, setIsRinging] = React.useState(false)
+  const [isLocating, setIsLocating] = React.useState(false)
+  const [locationCoords, setLocationCoords] = React.useState<{ lat: number; lng: number } | null>(null)
   React.useEffect(() => {
-    const handleClipboardEvent = (_event: any, payload: any) => {
+    const handlePhoneEvent = (_event: any, payload: any) => {
       if (payload.type === 'CLIPBOARD_CHANGED') {
         setLastSyncedClip(payload.data.text)
+      } else if (payload.type === 'LOCATE_DEVICE_RESP') {
+        setIsLocating(false)
+        if (payload.data && payload.data.success) {
+          setLocationCoords({ lat: payload.data.lat, lng: payload.data.lng })
+        } else {
+          alert('Failed to get phone location. Ensure GPS is enabled.')
+        }
       }
     }
-    const sub = window.api.onPhoneEvent(handleClipboardEvent)
+    const sub = window.api.onPhoneEvent(handlePhoneEvent)
     return () => {
       window.api.removePhoneEventListener(sub)
     }
@@ -141,6 +160,94 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="font-semibold">{signalLevel}/4</span>
               </div>
               <span className="text-[10px] text-dim font-medium">Signal</span>
+            </div>
+
+            {/* Device Actions Panel */}
+            <div className="border-t border-border/60 pt-3.5 mt-3.5 space-y-2 select-none">
+              <span className="text-[10px] text-muted font-bold tracking-wider uppercase">
+                Device Actions
+              </span>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                {/* Flashlight */}
+                <button
+                  onClick={async () => {
+                    const nextState = !flashlightOn
+                    setFlashlightOn(nextState)
+                    await window.api.toggleFlashlight(nextState)
+                  }}
+                  className={`flex items-center justify-center space-x-1.5 p-2 rounded-lg border text-[10px] font-bold transition-all ${
+                    flashlightOn
+                      ? 'bg-success/15 border-success/35 text-success'
+                      : 'bg-card border-border hover:bg-hover text-secondary hover:text-white'
+                  }`}
+                  title="Toggle Flashlight"
+                >
+                  <FlashlightIcon size={12} />
+                  <span>Flashlight</span>
+                </button>
+
+                {/* Ring Phone */}
+                <button
+                  onClick={async () => {
+                    if (isRinging) {
+                      setIsRinging(false)
+                      await window.api.stopRinging()
+                    } else {
+                      setIsRinging(true)
+                      await window.api.ringPhone()
+                    }
+                  }}
+                  className={`flex items-center justify-center space-x-1.5 p-2 rounded-lg border text-[10px] font-bold transition-all ${
+                    isRinging
+                      ? 'bg-danger/15 border-danger/35 text-danger animate-pulse'
+                      : 'bg-card border-border hover:bg-hover text-secondary hover:text-white'
+                  }`}
+                  title="Ring Device to Find it"
+                >
+                  {isRinging ? <VolumeX size={12} /> : <Volume2 size={12} />}
+                  <span>{isRinging ? 'Mute Ring' : 'Find Phone'}</span>
+                </button>
+
+                {/* Locate Phone */}
+                <button
+                  onClick={async () => {
+                    setIsLocating(true)
+                    setLocationCoords(null)
+                    await window.api.locateDevice()
+                  }}
+                  disabled={isLocating}
+                  className="flex items-center justify-center space-x-1.5 p-2 bg-card border border-border hover:bg-hover text-secondary hover:text-white rounded-lg text-[10px] font-bold transition-all disabled:opacity-50"
+                  title="Get Phone Location"
+                >
+                  <MapPin size={12} className={isLocating ? 'animate-bounce text-accent' : ''} />
+                  <span>{isLocating ? 'Locating...' : 'Locate Device'}</span>
+                </button>
+
+                {/* Mirror Screen */}
+                <button
+                  onClick={onOpenMirroring}
+                  className="flex items-center justify-center space-x-1.5 p-2 bg-card border border-border hover:bg-hover text-secondary hover:text-white rounded-lg text-[10px] font-bold transition-all"
+                  title="Start Realtime Screen Mirroring"
+                >
+                  <MonitorPlay size={12} />
+                  <span>Mirror Screen</span>
+                </button>
+              </div>
+
+              {/* Location Google Maps URL Link */}
+              {locationCoords && (
+                <div className="bg-card p-2 rounded-lg border border-border/80 flex items-center justify-between text-[10px] mt-1.5">
+                  <span className="text-secondary truncate">Location acquired</span>
+                  <a
+                    href={`https://maps.google.com/?q=${locationCoords.lat},${locationCoords.lng}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-accent hover:underline font-bold flex-shrink-0"
+                  >
+                    Open Google Maps
+                  </a>
+                </div>
+              )}
             </div>
 
           </div>
@@ -243,53 +350,116 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {notif.message}
                   </p>
 
-                  {/* Inline Quick Reply UI */}
-                  {replyingId === notif.id ? (
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault()
-                        if (replyText.trim()) {
-                          onSendReply(notif.id, replyText.trim())
-                          setReplyingId(null)
-                          setReplyText('')
-                        }
-                      }}
-                      className="mt-2.5 flex items-center space-x-2 no-drag"
-                    >
-                      <input
-                        type="text"
-                        value={replyText}
-                        onChange={(e) => setReplyText(e.target.value)}
-                        placeholder="Type reply..."
-                        className="flex-1 bg-card border border-border rounded px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-accent"
-                        autoFocus
-                      />
-                      <button
-                        type="submit"
-                        disabled={!replyText.trim()}
-                        className="p-1 bg-accent rounded text-white hover:bg-accent-dark disabled:opacity-40"
-                      >
-                        <Send size={10} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setReplyingId(null)}
-                        className="p-1 text-dim hover:text-white"
-                      >
-                        <X size={10} />
-                      </button>
-                    </form>
+                  {/* Notification Actions */}
+                  {notif.actions && notif.actions.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 mt-2 select-none">
+                      {notif.actions.map((action) => (
+                        <div key={action.index} className="inline-block">
+                          {replyingId === `${notif.id}-${action.index}` ? (
+                            <form
+                              onSubmit={async (e) => {
+                                e.preventDefault()
+                                if (replyText.trim()) {
+                                  await window.api.triggerNotificationAction(notif.id, action.index, replyText.trim())
+                                  await window.api.dismissNotification(notif.id)
+                                  onDismissNotification(notif.id)
+                                  setReplyingId(null)
+                                  setReplyText('')
+                                }
+                              }}
+                              className="flex items-center space-x-1.5 no-drag bg-card border border-border/80 rounded px-2 py-0.5"
+                            >
+                              <input
+                                type="text"
+                                value={replyText}
+                                onChange={(e) => setReplyText(e.target.value)}
+                                placeholder="Reply..."
+                                className="bg-transparent text-[10px] text-white focus:outline-none w-20"
+                                autoFocus
+                              />
+                              <button
+                                type="submit"
+                                disabled={!replyText.trim()}
+                                className="text-accent hover:text-white disabled:opacity-40"
+                              >
+                                <Send size={10} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setReplyingId(null)}
+                                className="text-dim hover:text-white"
+                              >
+                                <X size={10} />
+                              </button>
+                            </form>
+                          ) : (
+                            <button
+                              onClick={async () => {
+                                if (action.isReply) {
+                                  setReplyingId(`${notif.id}-${action.index}`)
+                                  setReplyText('')
+                                } else {
+                                  await window.api.triggerNotificationAction(notif.id, action.index)
+                                  await window.api.dismissNotification(notif.id)
+                                  onDismissNotification(notif.id)
+                                }
+                              }}
+                              className="px-2 py-1 bg-card hover:bg-hover border border-border/80 rounded text-[10px] font-bold text-secondary hover:text-white transition-all duration-150"
+                            >
+                              {action.title}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   ) : (
-                    notif.replyable === true && (
-                      <button
-                        onClick={() => {
-                          setReplyingId(notif.id)
-                          setReplyText('')
+                    replyingId === notif.id ? (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault()
+                          if (replyText.trim()) {
+                            onSendReply(notif.id, replyText.trim())
+                            setReplyingId(null)
+                            setReplyText('')
+                          }
                         }}
-                        className="mt-1.5 text-[10px] text-accent font-semibold hover:underline"
+                        className="mt-2.5 flex items-center space-x-2 no-drag"
                       >
-                        Reply
-                      </button>
+                        <input
+                          type="text"
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
+                          placeholder="Type reply..."
+                          className="flex-1 bg-card border border-border rounded px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-accent"
+                          autoFocus
+                        />
+                        <button
+                          type="submit"
+                          disabled={!replyText.trim()}
+                          className="p-1 bg-accent rounded text-white hover:bg-accent-dark disabled:opacity-40"
+                        >
+                          <Send size={10} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReplyingId(null)}
+                          className="p-1 text-dim hover:text-white"
+                        >
+                          <X size={10} />
+                        </button>
+                      </form>
+                    ) : (
+                      notif.replyable === true && (
+                        <button
+                          onClick={() => {
+                            setReplyingId(notif.id)
+                            setReplyText('')
+                          }}
+                          className="mt-1.5 text-[10px] text-accent font-semibold hover:underline"
+                        >
+                          Reply
+                        </button>
+                      )
                     )
                   )}
                 </div>

@@ -8,6 +8,7 @@ export interface PhoneNotification {
   icon?: string // Base64 jpeg representation
   dismissed?: boolean
   replyable?: boolean
+  actions?: Array<{ index: number; title: string; isReply: boolean }>
 }
 
 export interface CallRecord {
@@ -45,12 +46,15 @@ export interface PhotoMeta {
   size: number
   timestamp: string
   thumbnail?: string
+  isVideo?: boolean
+  duration?: number
 }
 
 export interface ContactRecord {
   id: string
   name: string
   number: string
+  avatar?: string
 }
 
 export interface AppRecord {
@@ -69,4 +73,14 @@ export interface DeviceStatus {
   btConnected?: boolean
 }
 
-export type TabId = 'calls' | 'messages' | 'photos' | 'apps' | 'contacts' | 'files'
+export type TabId = 'calls' | 'messages' | 'photos' | 'apps' | 'contacts' | 'files' | 'calendar'
+
+export interface CalendarEventRecord {
+  id: string
+  title: string
+  description: string
+  start: string
+  end: string
+  location: string
+  allDay: boolean
+}

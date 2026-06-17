@@ -34,9 +34,24 @@ object WebSocketClient {
     private var currentUrl: String = ""
     private var scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    @Volatile private var aesKey: ByteArray? = null
+    @Volatile private var handshakeComplete = false
+
     // ──────────────────────────────────────────────────────────────────────────
     // Public API
     // ──────────────────────────────────────────────────────────────────────────
+
+    fun setEncryptionKey(key: ByteArray) {
+        aesKey = key
+        handshakeComplete = true
+        Log.i(TAG, "Encryption key set. Secure channel active.")
+    }
+
+    fun clearEncryptionKey() {
+        aesKey = null
+        handshakeComplete = false
+        Log.i(TAG, "Encryption key cleared. Secure channel deactivated.")
+    }
 
     fun connect(url: String, context: Context) {
         currentUrl = url
@@ -50,13 +65,30 @@ object WebSocketClient {
         webSocket?.close(1000, "User disconnect")
         webSocket  = null
         connected.set(false)
+        clearEncryptionKey()
     }
 
     fun send(json: String): Boolean {
         val ws = webSocket
         return if (connected.get() && ws != null) {
-            ws.send(json).also { ok ->
-                if (!ok) Log.w(TAG, "send() returned false for: ${json.take(80)}")
+            val key = aesKey
+            val messageToSend = if (handshakeComplete && key != null) {
+                val encryptedMap = SecurityUtils.encryptAES_GCM(json, key)
+                if (encryptedMap != null) {
+                    org.json.JSONObject().apply {
+                        put("encrypted", true)
+                        put("iv", encryptedMap["iv"])
+                        put("ciphertext", encryptedMap["ciphertext"])
+                    }.toString()
+                } else {
+                    Log.e(TAG, "GCM encryption failed, falling back to plaintext")
+                    json
+                }
+            } else {
+                json
+            }
+            ws.send(messageToSend).also { ok ->
+                if (!ok) Log.w(TAG, "send() returned false for: ${messageToSend.take(80)}")
             }
         } else {
             Log.w(TAG, "send() skipped — not connected")
@@ -78,6 +110,7 @@ object WebSocketClient {
 
             override fun onOpen(ws: WebSocket, response: Response) {
                 Log.i(TAG, "WebSocket connected to $currentUrl")
+                clearEncryptionKey()
                 connected.set(true)
                 retryCount.set(0)
                 reconnecting.set(false)
@@ -86,7 +119,28 @@ object WebSocketClient {
 
             override fun onMessage(ws: WebSocket, text: String) {
                 Log.d(TAG, "RX: ${text.take(120)}")
-                MessageHandler.handleIncoming(text, context)
+                try {
+                    val json = org.json.JSONObject(text)
+                    if (json.optBoolean("encrypted", false)) {
+                        val key = aesKey
+                        if (key != null) {
+                            val iv = json.optString("iv")
+                            val ciphertext = json.optString("ciphertext")
+                            val decrypted = SecurityUtils.decryptAES_GCM(ciphertext, iv, key)
+                            if (decrypted != null) {
+                                MessageHandler.handleIncoming(decrypted, context)
+                            } else {
+                                Log.e(TAG, "Failed to decrypt GCM payload")
+                            }
+                        } else {
+                            Log.e(TAG, "Received encrypted message but no AES key is set")
+                        }
+                    } else {
+                        MessageHandler.handleIncoming(text, context)
+                    }
+                } catch (e: Exception) {
+                    MessageHandler.handleIncoming(text, context)
+                }
             }
 
             override fun onClosing(ws: WebSocket, code: Int, reason: String) {
@@ -97,6 +151,7 @@ object WebSocketClient {
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
                 Log.i(TAG, "WebSocket closed: $code $reason")
                 connected.set(false)
+                clearEncryptionKey()
                 PhoneLinkService.notifyDisconnected()
                 scheduleReconnect(context)
             }
@@ -104,6 +159,7 @@ object WebSocketClient {
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket failure", t)
                 connected.set(false)
+                clearEncryptionKey()
                 PhoneLinkService.notifyDisconnected()
                 scheduleReconnect(context)
             }

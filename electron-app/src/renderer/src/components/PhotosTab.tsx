@@ -1,6 +1,21 @@
 import React, { useState, useEffect } from 'react'
 import { PhotoMeta } from '../types'
-import { Image, Calendar, HardDrive, Camera, Download, Loader2, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  Image,
+  Calendar,
+  HardDrive,
+  Camera,
+  Download,
+  Loader2,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Play,
+  ZoomIn,
+  ZoomOut,
+  Trash2,
+  Video
+} from 'lucide-react'
 
 interface PhotosTabProps {
   photos: PhotoMeta[]
@@ -10,7 +25,13 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
   const [photoData, setPhotoData] = useState<Record<string, string>>({})
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set())
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null)
+  const [zoomScale, setZoomScale] = useState(1)
   const pendingOpenIdRef = React.useRef<string | null>(null)
+
+  // Reset zoom scale when selected photo changes
+  useEffect(() => {
+    setZoomScale(1)
+  }, [selectedPhotoIndex])
 
   // Format file size
   const formatSize = (bytes: number) => {
@@ -29,6 +50,15 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
     } catch {
       return ''
     }
+  }
+
+  // Format video duration
+  const formatDuration = (ms?: number) => {
+    if (!ms) return '0:00'
+    const totalSeconds = Math.floor(ms / 1000)
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`
   }
 
   // Fetch local image base64 data for all photos
@@ -94,7 +124,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
     try {
       const success = await window.api.downloadPhoto(id)
       if (!success) {
-        alert('Failed to request photo download. Ensure your phone is connected.')
+        alert('Failed to request download. Ensure your phone is connected.')
         setDownloadingIds((prev) => {
           const next = new Set(prev)
           next.delete(id)
@@ -126,7 +156,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
       try {
         const success = await window.api.downloadPhoto(id)
         if (!success) {
-          alert('Failed to request photo download. Ensure your phone is connected.')
+          alert('Failed to request download. Ensure your phone is connected.')
           setDownloadingIds((prev) => {
             const next = new Set(prev)
             next.delete(id)
@@ -142,6 +172,19 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
           return next
         })
         pendingOpenIdRef.current = null
+      }
+    }
+  }
+
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (confirm('Are you sure you want to delete this media file?')) {
+      try {
+        await window.api.deletePhoto(id)
+        setSelectedPhotoIndex(null)
+      } catch (err) {
+        console.error('Failed to delete photo:', err)
+        alert('Failed to delete media.')
       }
     }
   }
@@ -167,14 +210,14 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
       {/* Header */}
       <div className="p-6 border-b border-border flex items-center justify-between flex-shrink-0">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight">Recent Photos</h2>
-          <p className="text-xs text-muted mt-0.5">Click photo to view full size. Missing photos can be downloaded on-demand.</p>
+          <h2 className="text-xl font-bold text-white tracking-tight">Recent Gallery</h2>
+          <p className="text-xs text-muted mt-0.5">Click photo or video to view full size. Missing items can be downloaded on-demand.</p>
         </div>
         
         {/* Count Badge */}
         {photos.length > 0 && (
           <div className="text-xs font-semibold px-3 py-1.5 bg-accent/10 border border-accent/30 text-accent rounded-lg">
-            {photos.length} Photos synced
+            {photos.length} items synced
           </div>
         )}
       </div>
@@ -184,9 +227,9 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
         {photos.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-dim space-y-3">
             <Camera size={48} className="opacity-25 animate-pulse text-accent" />
-            <p className="text-sm font-semibold">No synced photos found</p>
+            <p className="text-sm font-semibold">No synced media found</p>
             <p className="text-xs max-w-sm px-6">
-              When connected, metadata for the newest images in your phone's gallery will show up here.
+              When connected, metadata for the newest images and videos in your phone's gallery will show up here.
             </p>
           </div>
         ) : (
@@ -204,14 +247,31 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
                   }`}
                 >
                   
-                  {/* Photo Thumbnail Container */}
+                  {/* Media Thumbnail Container */}
                   <div className="aspect-square bg-card border-b border-border flex flex-col items-center justify-center relative group-hover:bg-hover transition-colors overflow-hidden">
                     {isDownloaded ? (
-                      <img
-                        src={photoData[photo.id]}
-                        alt={photo.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
+                      <div className="w-full h-full relative">
+                        {photo.isVideo ? (
+                          <>
+                            <img
+                              src={photoData[photo.id]}
+                              alt={photo.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                            <div className="absolute inset-0 bg-black/25 flex items-center justify-center">
+                              <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center text-white backdrop-blur-sm group-hover:scale-110 transition-transform">
+                                <Play size={18} fill="currentColor" className="ml-0.5" />
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <img
+                            src={photoData[photo.id]}
+                            alt={photo.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                        )}
+                      </div>
                     ) : photo.thumbnail ? (
                       <div className="w-full h-full relative">
                         <img
@@ -225,13 +285,23 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
                           </div>
                         ) : (
                           <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                            <Download size={20} className="text-white drop-shadow-md animate-bounce" />
+                            {photo.isVideo ? (
+                              <div className="w-10 h-10 rounded-full bg-accent text-white flex items-center justify-center shadow-lg transition-all duration-150 transform hover:scale-110">
+                                <Play size={18} fill="currentColor" className="ml-0.5" />
+                              </div>
+                            ) : (
+                              <Download size={20} className="text-white drop-shadow-md animate-bounce" />
+                            )}
                           </div>
                         )}
                       </div>
                     ) : (
                       <>
-                        <Image size={36} className="text-dim group-hover:text-accent/60 transition-colors" />
+                        {photo.isVideo ? (
+                          <Video size={36} className="text-dim group-hover:text-accent/60 transition-colors" />
+                        ) : (
+                          <Image size={36} className="text-dim group-hover:text-accent/60 transition-colors" />
+                        )}
                         <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex flex-col items-center justify-center opacity-80 group-hover:opacity-100 transition-opacity">
                           {isDownloading ? (
                             <Loader2 className="animate-spin text-accent" size={28} />
@@ -239,7 +309,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
                             <button
                               onClick={(e) => handleDownload(photo.id, e)}
                               className="w-10 h-10 rounded-full bg-accent hover:bg-accent-hover text-white flex items-center justify-center shadow-lg transition-all duration-150 transform hover:scale-110"
-                              title="Download full size photo"
+                              title="Download full size media"
                             >
                               <Download size={18} />
                             </button>
@@ -247,9 +317,18 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
                         </div>
                       </>
                     )}
+                    
+                    {/* Format/Type indicators */}
                     <span className="absolute bottom-2.5 right-2.5 bg-black/60 backdrop-blur-sm text-[9px] px-1.5 py-0.5 rounded text-secondary font-medium">
-                      {photo.name.split('.').pop()?.toUpperCase() || 'JPG'}
+                      {photo.isVideo ? 'MP4' : (photo.name.split('.').pop()?.toUpperCase() || 'JPG')}
                     </span>
+
+                    {/* Duration badge for videos */}
+                    {photo.isVideo && photo.duration && (
+                      <span className="absolute bottom-2.5 left-2.5 bg-black/60 backdrop-blur-sm text-[9px] px-1.5 py-0.5 rounded text-secondary font-medium">
+                        {formatDuration(photo.duration)}
+                      </span>
+                    )}
                   </div>
 
                   {/* Metadata Details */}
@@ -280,14 +359,40 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
       {/* Full screen Lightbox Modal */}
       {selectedPhotoIndex !== null && photos[selectedPhotoIndex] && (
         <div className="fixed inset-0 bg-black/95 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
+          
           {/* Top panel controls */}
           <div className="absolute top-4 right-4 flex items-center space-x-4">
+            {!photos[selectedPhotoIndex].isVideo && (
+              <>
+                <button
+                  onClick={() => setZoomScale(prev => Math.min(prev + 0.25, 3))}
+                  className="p-2.5 bg-sidebar hover:bg-hover border border-border text-white rounded-full transition-all"
+                  title="Zoom In"
+                >
+                  <ZoomIn size={18} />
+                </button>
+                <button
+                  onClick={() => setZoomScale(prev => Math.max(prev - 0.25, 0.5))}
+                  className="p-2.5 bg-sidebar hover:bg-hover border border-border text-white rounded-full transition-all"
+                  title="Zoom Out"
+                >
+                  <ZoomOut size={18} />
+                </button>
+              </>
+            )}
+            <button
+              onClick={(e) => handleDelete(photos[selectedPhotoIndex].id, e)}
+              className="p-2.5 bg-sidebar hover:bg-hover hover:text-danger border border-border text-white rounded-full transition-all"
+              title="Delete media"
+            >
+              <Trash2 size={18} />
+            </button>
             <button
               onClick={() => setSelectedPhotoIndex(null)}
               className="p-2.5 bg-sidebar hover:bg-hover border border-border text-white rounded-full transition-all"
               title="Close viewer"
             >
-              <X size={20} />
+              <X size={18} />
             </button>
           </div>
 
@@ -299,13 +404,23 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
             <ChevronLeft size={24} />
           </button>
 
-          {/* Main Display Image */}
-          <div className="max-w-[80vw] max-h-[80vh] flex items-center justify-center">
-            <img
-              src={photoData[photos[selectedPhotoIndex].id]}
-              alt={photos[selectedPhotoIndex].name}
-              className="max-w-full max-h-full object-contain rounded-lg border border-border shadow-2xl animate-fade-in"
-            />
+          {/* Main Display Container */}
+          <div className="max-w-[80vw] max-h-[80vh] flex items-center justify-center overflow-auto scrollbar-none">
+            {photos[selectedPhotoIndex].isVideo ? (
+              <video
+                src={photoData[photos[selectedPhotoIndex].id]}
+                controls
+                autoPlay
+                className="max-w-full max-h-full object-contain rounded-lg border border-border shadow-2xl animate-fade-in"
+              />
+            ) : (
+              <img
+                src={photoData[photos[selectedPhotoIndex].id]}
+                alt={photos[selectedPhotoIndex].name}
+                style={{ transform: `scale(${zoomScale})` }}
+                className="max-w-full max-h-full object-contain rounded-lg border border-border shadow-2xl transition-transform duration-200 animate-fade-in"
+              />
+            )}
           </div>
 
           {/* Right Arrow */}
@@ -323,6 +438,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({ photos }) => {
             </h3>
             <p className="text-xs text-muted">
               {formatSize(photos[selectedPhotoIndex].size)} • {formatDate(photos[selectedPhotoIndex].timestamp)}
+              {photos[selectedPhotoIndex].isVideo && ` • Video Duration: ${formatDuration(photos[selectedPhotoIndex].duration)}`}
             </p>
           </div>
         </div>

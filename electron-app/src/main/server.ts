@@ -3,6 +3,8 @@ import * as os from 'os'
 import { app, clipboard } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
+import * as crypto from 'crypto'
+import { generateECKeyPair, deriveAESKey, encryptAES_GCM, decryptAES_GCM } from './encryption'
 import {
   saveNotification,
   saveCalls,
@@ -11,7 +13,8 @@ import {
   updateDeviceStatus,
   saveContacts,
   saveApps,
-  dismissNotification
+  dismissNotification,
+  saveCalendarEvents
 } from './database'
 import { emitToRenderer } from './ipc'
 import { showNotification, showCallNotification } from './notifications'
@@ -20,6 +23,9 @@ interface ConnectedClient {
   ws: WebSocket
   deviceName: string
   lastPong: number
+  privateKey?: crypto.KeyObject
+  aesKey?: Buffer
+  handshakeComplete?: boolean
 }
 
 const clients = new Map<WebSocket, ConnectedClient>()
@@ -70,17 +76,21 @@ export function startWebSocketServer(): void {
     const remoteAddr = req.socket.remoteAddress || 'unknown'
     console.log(`[WS] Client connected from ${remoteAddr}`)
 
+    const keys = generateECKeyPair()
     const client: ConnectedClient = {
       ws,
       deviceName: 'Android Phone',
-      lastPong: Date.now()
+      lastPong: Date.now(),
+      privateKey: keys.privateKey,
+      handshakeComplete: false
     }
     clients.set(ws, client)
 
-    // Send acknowledgement
+    // Send acknowledgement with PC public key in plaintext
     sendToClient(ws, {
       type: 'CONNECT_ACK',
-      pcName: os.hostname()
+      pcName: os.hostname(),
+      publicKey: keys.publicKeyBase64
     })
 
     // Notify renderer
@@ -91,8 +101,50 @@ export function startWebSocketServer(): void {
 
     ws.on('message', (data: Buffer) => {
       try {
-        const message = JSON.parse(data.toString())
-        handleIncoming(message, { type: 'ws', ws })
+        const text = data.toString()
+        const rawJson = JSON.parse(text)
+        const c = clients.get(ws)
+
+        if (rawJson.encrypted === true) {
+          if (c && c.aesKey) {
+            try {
+              const decryptedText = decryptAES_GCM(rawJson.ciphertext, rawJson.iv, c.aesKey)
+              const decryptedJson = JSON.parse(decryptedText)
+              handleIncoming(decryptedJson, { type: 'ws', ws })
+            } catch (decErr) {
+              console.error('[WS] Decryption failed for payload:', decErr)
+            }
+          } else {
+            console.error('[WS] Received encrypted payload but AES key is not derived yet.')
+          }
+        } else {
+          // Plaintext message
+          if (rawJson.type === 'CLIENT_ACK') {
+            const clientPublicKey = rawJson.publicKey
+            if (c && c.privateKey && clientPublicKey) {
+              try {
+                const derivedKey = deriveAESKey(c.privateKey, clientPublicKey)
+                c.aesKey = derivedKey
+                c.handshakeComplete = true
+                console.log('[WS] Handshake complete. Derived AES-256 key successfully.')
+
+                // Activate database encryption with this key
+                const { setDatabaseEncryptionKey } = require('./database')
+                setDatabaseEncryptionKey(derivedKey)
+
+                // Notify renderer that connection has changed (so it updates tabs/status)
+                emitToRenderer('connection-changed', {
+                  connected: true,
+                  count: clients.size
+                })
+              } catch (dhErr) {
+                console.error('[WS] ECDH derivation failed:', dhErr)
+              }
+            }
+          } else {
+            handleIncoming(rawJson, { type: 'ws', ws })
+          }
+        }
       } catch (err) {
         console.error('[WS] Failed to parse message:', err)
       }
@@ -101,6 +153,10 @@ export function startWebSocketServer(): void {
     ws.on('close', () => {
       console.log(`[WS] Client disconnected: ${remoteAddr}`)
       clients.delete(ws)
+      if (clients.size === 0) {
+        const { clearDatabaseEncryptionKey } = require('./database')
+        clearDatabaseEncryptionKey()
+      }
       emitToRenderer('connection-changed', {
         connected: clients.size > 0,
         count: clients.size
@@ -146,20 +202,37 @@ export function startWebSocketServer(): void {
 }
 
 const activeFileStreams = new Map<string, fs.WriteStream>()
+interface TransferMeta {
+  fileName: string
+  totalChunks: number
+  chunksReceived: number
+}
+const activeTransferMeta = new Map<string, TransferMeta>()
 
 export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'ws' | 'bt', ws?: WebSocket }): void {
   const type = msg.type as string
 
   switch (type) {
+    case 'DELETE_SMS_ACK': {
+      emitToRenderer('phone-event', { type: 'DELETE_SMS_ACK', data: { msgId: msg.msgId, success: msg.success } })
+      break
+    }
+
     case 'CONTACTS_HISTORY': {
       const contacts = (msg.contacts as Array<Record<string, unknown>>) || []
       const normalized = contacts.map((c) => ({
         id: (c.id as string) || `contact_${Date.now()}`,
         name: (c.name as string) || 'Unknown',
-        number: (c.number as string) || ''
+        number: (c.number as string) || '',
+        avatar: (c.avatar as string) || undefined
       }))
       saveContacts(normalized)
       emitToRenderer('phone-event', { type: 'CONTACTS_HISTORY', data: normalized })
+      break
+    }
+
+    case 'FILES_LIST': {
+      emitToRenderer('phone-event', { type: 'FILES_LIST', data: { path: msg.path, entries: msg.entries } })
       break
     }
 
@@ -179,19 +252,29 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
       const fileId = msg.fileId as string
       const fileName = msg.fileName as string
       const fileType = msg.fileType as string
+      const totalChunks = (msg.totalChunks as number) || 1
 
       try {
         let filePath = ''
         if (fileType === 'photo') {
+          const dbData = readData()
+          const pMeta = dbData.photos.find(p => p.id === fileId)
+          const ext = pMeta && pMeta.isVideo ? 'mp4' : 'jpg'
+          
           const photosDir = join(app.getPath('userData'), 'photos')
           fs.mkdirSync(photosDir, { recursive: true })
-          filePath = join(photosDir, `${fileId}.jpg`)
+          filePath = join(photosDir, `${fileId}.${ext}`)
         } else {
           filePath = join(os.homedir(), 'Downloads', fileName)
         }
 
         const stream = fs.createWriteStream(filePath)
         activeFileStreams.set(fileId, stream)
+        activeTransferMeta.set(fileId, {
+          fileName,
+          totalChunks,
+          chunksReceived: 0
+        })
         console.log(`[WS] Prepared to receive file: ${filePath}`)
       } catch (err) {
         console.error('[WS] Failed to start file write stream:', err)
@@ -208,6 +291,23 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
         const buffer = Buffer.from(dataBase64, 'base64')
         stream.write(buffer)
       }
+
+      const meta = activeTransferMeta.get(fileId)
+      if (meta) {
+        meta.chunksReceived++
+        const progress = Math.round((meta.chunksReceived / meta.totalChunks) * 100)
+        emitToRenderer('phone-event', {
+          type: 'FILE_TRANSFER_PROGRESS',
+          data: {
+            fileId,
+            fileName: meta.fileName,
+            direction: 'download',
+            progress: Math.min(progress, 100),
+            chunkIndex: meta.chunksReceived,
+            totalChunks: meta.totalChunks
+          }
+        })
+      }
       break
     }
 
@@ -217,6 +317,7 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
       if (stream) {
         stream.end()
         activeFileStreams.delete(fileId)
+        activeTransferMeta.delete(fileId)
         console.log(`[WS] File transfer complete: ${fileId}`)
         emitToRenderer('phone-event', { type: 'PHOTO_DOWNLOADED', data: { id: fileId } })
       }
@@ -232,7 +333,8 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
         message: (msg.message as string) || '',
         timestamp: (msg.timestamp as string) || new Date().toISOString(),
         icon: (msg.icon as string) || undefined,
-        replyable: Boolean(msg.replyable)
+        replyable: Boolean(msg.replyable),
+        actions: (msg.actions as Array<{ index: number; title: string; isReply: boolean }>) || undefined
       }
       saveNotification(notif)
       showNotification(notif.app, notif.title, notif.message)
@@ -324,10 +426,28 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
         name: (p.name as string) || 'photo.jpg',
         size: (p.size as number) || 0,
         timestamp: (p.timestamp as string) || new Date().toISOString(),
-        thumbnail: (p.thumbnail as string) || undefined
+        thumbnail: (p.thumbnail as string) || undefined,
+        isVideo: Boolean(p.isVideo),
+        duration: (p.duration as number) || undefined
       }))
       savePhotos(normalized)
       emitToRenderer('phone-event', { type: 'PHOTO_METADATA', data: normalized })
+      break
+    }
+
+    case 'CALENDAR_HISTORY': {
+      const events = (msg.events as Array<Record<string, unknown>>) || []
+      const normalized = events.map((e) => ({
+        id: (e.id as string) || `event_${Date.now()}`,
+        title: (e.title as string) || '',
+        description: (e.description as string) || '',
+        start: (e.start as string) || new Date().toISOString(),
+        end: (e.end as string) || new Date().toISOString(),
+        location: (e.location as string) || '',
+        allDay: Boolean(e.allDay)
+      }))
+      saveCalendarEvents(normalized)
+      emitToRenderer('phone-event', { type: 'CALENDAR_HISTORY', data: normalized })
       break
     }
 
@@ -376,6 +496,16 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
       break
     }
 
+    case 'MIRROR_FRAME': {
+      emitToRenderer('phone-event', { type: 'MIRROR_FRAME', data: msg.data })
+      break
+    }
+
+    case 'LOCATE_DEVICE_RESP': {
+      emitToRenderer('phone-event', { type: 'LOCATE_DEVICE_RESP', data: msg })
+      break
+    }
+
     default:
       console.log(`[WS] Unknown message type: ${type}`)
   }
@@ -383,7 +513,25 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
 
 function sendToClient(ws: WebSocket, message: object): void {
   if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(message))
+    const c = clients.get(ws)
+    let finalPayload: string
+    if (c && c.handshakeComplete && c.aesKey) {
+      try {
+        const plaintext = JSON.stringify(message)
+        const encrypted = encryptAES_GCM(plaintext, c.aesKey)
+        finalPayload = JSON.stringify({
+          encrypted: true,
+          iv: encrypted.iv,
+          ciphertext: encrypted.ciphertext
+        })
+      } catch (encErr) {
+        console.error('[WS] Encryption failed for message:', encErr)
+        finalPayload = JSON.stringify(message)
+      }
+    } else {
+      finalPayload = JSON.stringify(message)
+    }
+    ws.send(finalPayload)
   }
 }
 

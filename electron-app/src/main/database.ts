@@ -59,6 +59,18 @@ export interface DeviceStatusRecord {
   deviceName: string
 }
 
+export interface ContactRecord {
+  id: string
+  name: string
+  number: string
+}
+
+export interface AppRecord {
+  name: string
+  package: string
+  icon?: string
+}
+
 interface DatabaseSchema {
   notifications: NotificationRecord[]
   calls: CallRecord[]
@@ -66,6 +78,8 @@ interface DatabaseSchema {
   sms_messages: SmsMessageRecord[]
   photos: PhotoRecord[]
   device_status: DeviceStatusRecord
+  contacts: ContactRecord[]
+  apps: AppRecord[]
 }
 
 const initialData: DatabaseSchema = {
@@ -80,7 +94,9 @@ const initialData: DatabaseSchema = {
     network: 'offline',
     signal: 0,
     deviceName: 'Android Phone'
-  }
+  },
+  contacts: [],
+  apps: []
 }
 
 // Helper: read data from JSON file
@@ -120,6 +136,8 @@ export function initDatabase(): void {
     if (!data.sms_threads) { data.sms_threads = []; dirty = true }
     if (!data.sms_messages) { data.sms_messages = []; dirty = true }
     if (!data.photos) { data.photos = []; dirty = true }
+    if (!data.contacts) { data.contacts = []; dirty = true }
+    if (!data.apps) { data.apps = []; dirty = true }
     if (!data.device_status) { data.device_status = { ...initialData.device_status }; dirty = true }
     if (dirty) {
       writeData(data)
@@ -302,4 +320,30 @@ export function clearOldData(days = 30): void {
   data.photos = data.photos.filter((p) => new Date(p.timestamp).getTime() >= cutoffTime)
   
   writeData(data)
+}
+
+// ─── Contacts ────────────────────────────────────────────────────────────────
+
+export function saveContacts(contacts: ContactRecord[]): void {
+  const data = readData()
+  data.contacts = contacts
+  writeData(data)
+}
+
+export function getContacts(): ContactRecord[] {
+  const data = readData()
+  return data.contacts || []
+}
+
+// ─── Apps ────────────────────────────────────────────────────────────────────
+
+export function saveApps(apps: AppRecord[]): void {
+  const data = readData()
+  data.apps = apps
+  writeData(data)
+}
+
+export function getApps(): AppRecord[] {
+  const data = readData()
+  return data.apps || []
 }

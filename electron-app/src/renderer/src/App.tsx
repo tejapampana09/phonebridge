@@ -6,6 +6,8 @@ import { CallsTab } from './components/CallsTab'
 import { MessagesTab } from './components/MessagesTab'
 import { PhotosTab } from './components/PhotosTab'
 import { AppsTab } from './components/AppsTab'
+import { ContactsTab } from './components/ContactsTab'
+import { FilesTab } from './components/FilesTab'
 import { IncomingCallModal } from './components/IncomingCallModal'
 import { TabId } from './types'
 import {
@@ -17,7 +19,8 @@ import {
   Square,
   X,
   Link,
-  Settings
+  User,
+  FileUp
 } from 'lucide-react'
 
 function App() {
@@ -31,6 +34,8 @@ function App() {
     smsThreads,
     photos,
     deviceStatus,
+    contacts,
+    apps,
     refreshAll,
     fetchDeviceStatus,
     fetchNotifications,
@@ -118,22 +123,28 @@ function App() {
     }
   }
 
-  const handleAnswerCall = () => {
-    alert('Answering call... Please talk using your mobile handset.')
+  const handleAnswerCall = async () => {
+    try {
+      const success = await window.api.answerCall()
+      if (!success) {
+        console.warn('Failed to answer call via PC.')
+      }
+    } catch (err) {
+      console.error('Failed to answer call:', err)
+    }
     setIncomingCall(null)
   }
 
   const handleDeclineCall = async () => {
     try {
-      // Send dismiss command to phone
-      if (incomingCall) {
-        await window.api.dismissNotification(incomingCall.number)
+      const success = await window.api.rejectCall()
+      if (!success) {
+        console.warn('Failed to decline call via PC.')
       }
-      setIncomingCall(null)
     } catch (err) {
       console.error('Failed to decline call:', err)
-      setIncomingCall(null)
     }
+    setIncomingCall(null)
   }
 
   const handleUnpair = () => {
@@ -229,6 +240,17 @@ function App() {
                   <span>Calls</span>
                 </button>
                 <button
+                  onClick={() => setActiveTab('contacts')}
+                  className={`flex items-center space-x-2 border-b-2 px-1 text-sm font-semibold transition-all h-full ${
+                    activeTab === 'contacts'
+                      ? 'border-accent text-accent'
+                      : 'border-transparent text-secondary hover:text-white'
+                  }`}
+                >
+                  <User size={14} />
+                  <span>Contacts</span>
+                </button>
+                <button
                   onClick={() => setActiveTab('messages')}
                   className={`flex items-center space-x-2 border-b-2 px-1 text-sm font-semibold transition-all h-full ${
                     activeTab === 'messages'
@@ -259,7 +281,18 @@ function App() {
                   }`}
                 >
                   <AppWindow size={14} />
-                  <span>App Alerts</span>
+                  <span>Apps</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('files')}
+                  className={`flex items-center space-x-2 border-b-2 px-1 text-sm font-semibold transition-all h-full ${
+                    activeTab === 'files'
+                      ? 'border-accent text-accent'
+                      : 'border-transparent text-secondary hover:text-white'
+                  }`}
+                >
+                  <FileUp size={14} />
+                  <span>Files</span>
                 </button>
               </div>
 
@@ -280,16 +313,13 @@ function App() {
             {/* Active Tab Viewport */}
             <div className="flex-1 overflow-hidden relative">
               {activeTab === 'calls' && <CallsTab calls={calls} />}
+              {activeTab === 'contacts' && <ContactsTab contacts={contacts} />}
               {activeTab === 'messages' && (
                 <MessagesTab threads={smsThreads} refreshThreads={fetchSmsThreads} />
               )}
               {activeTab === 'photos' && <PhotosTab photos={photos} />}
-              {activeTab === 'apps' && (
-                <AppsTab
-                  notifications={notifications}
-                  onDismissNotification={handleDismissNotification}
-                />
-              )}
+              {activeTab === 'apps' && <AppsTab apps={apps} />}
+              {activeTab === 'files' && <FilesTab />}
             </div>
 
           </main>

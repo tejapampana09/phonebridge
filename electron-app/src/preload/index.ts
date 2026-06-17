@@ -13,6 +13,13 @@ const api = {
   getSmsMessages: (threadId: string) => ipcRenderer.invoke('get-sms-messages', threadId),
   getPhotos: () => ipcRenderer.invoke('get-photos'),
   getDeviceStatus: () => ipcRenderer.invoke('get-device-status'),
+  getContacts: () => ipcRenderer.invoke('get-contacts'),
+  getApps: () => ipcRenderer.invoke('get-apps'),
+  getPhotoData: (id: string) => ipcRenderer.invoke('get-photo-data', id),
+  downloadPhoto: (id: string) => ipcRenderer.invoke('download-photo', id),
+  sendFileToPhone: (filePath: string) => ipcRenderer.invoke('send-file-to-phone', { filePath }),
+  answerCall: () => ipcRenderer.invoke('answer-call'),
+  rejectCall: () => ipcRenderer.invoke('reject-call'),
   requestSync: () => ipcRenderer.invoke('request-sync'),
   
   // Real-time event listeners

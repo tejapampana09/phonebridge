@@ -1,11 +1,16 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import * as os from 'os'
+import { app } from 'electron'
+import * as fs from 'fs'
+import { join } from 'path'
 import {
   saveNotification,
   saveCalls,
   saveSmses,
   savePhotos,
-  updateDeviceStatus
+  updateDeviceStatus,
+  saveContacts,
+  saveApps
 } from './database'
 import { emitToRenderer } from './ipc'
 import { showNotification, showCallNotification } from './notifications'
@@ -103,10 +108,83 @@ export function startWebSocketServer(): void {
   }, 30000)
 }
 
+const activeFileStreams = new Map<string, fs.WriteStream>()
+
 export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'ws' | 'bt', ws?: WebSocket }): void {
   const type = msg.type as string
 
   switch (type) {
+    case 'CONTACTS_HISTORY': {
+      const contacts = (msg.contacts as Array<Record<string, unknown>>) || []
+      const normalized = contacts.map((c) => ({
+        id: (c.id as string) || `contact_${Date.now()}`,
+        name: (c.name as string) || 'Unknown',
+        number: (c.number as string) || ''
+      }))
+      saveContacts(normalized)
+      emitToRenderer('phone-event', { type: 'CONTACTS_HISTORY', data: normalized })
+      break
+    }
+
+    case 'APPS_HISTORY': {
+      const apps = (msg.apps as Array<Record<string, unknown>>) || []
+      const normalized = apps.map((a) => ({
+        name: (a.name as string) || 'App',
+        package: (a.package as string) || '',
+        icon: (a.icon as string) || undefined
+      }))
+      saveApps(normalized)
+      emitToRenderer('phone-event', { type: 'APPS_HISTORY', data: normalized })
+      break
+    }
+
+    case 'FILE_TRANSFER_START': {
+      const fileId = msg.fileId as string
+      const fileName = msg.fileName as string
+      const fileType = msg.fileType as string
+
+      try {
+        let filePath = ''
+        if (fileType === 'photo') {
+          const photosDir = join(app.getPath('userData'), 'photos')
+          filePath = join(photosDir, `${fileId}.jpg`)
+        } else {
+          filePath = join(os.homedir(), 'Downloads', fileName)
+        }
+
+        const stream = fs.createWriteStream(filePath)
+        activeFileStreams.set(fileId, stream)
+        console.log(`[WS] Prepared to receive file: ${filePath}`)
+      } catch (err) {
+        console.error('[WS] Failed to start file write stream:', err)
+      }
+      break
+    }
+
+    case 'FILE_TRANSFER_CHUNK': {
+      const fileId = msg.fileId as string
+      const dataBase64 = msg.data as string
+      
+      const stream = activeFileStreams.get(fileId)
+      if (stream) {
+        const buffer = Buffer.from(dataBase64, 'base64')
+        stream.write(buffer)
+      }
+      break
+    }
+
+    case 'FILE_TRANSFER_END': {
+      const fileId = msg.fileId as string
+      const stream = activeFileStreams.get(fileId)
+      if (stream) {
+        stream.end()
+        activeFileStreams.delete(fileId)
+        console.log(`[WS] File transfer complete: ${fileId}`)
+        emitToRenderer('phone-event', { type: 'PHOTO_DOWNLOADED', data: { id: fileId } })
+      }
+      break
+    }
+
     case 'NOTIFICATION': {
       const notif = {
         id: (msg.id as string) || `notif_${Date.now()}`,

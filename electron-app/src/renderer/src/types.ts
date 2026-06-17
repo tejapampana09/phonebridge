@@ -44,6 +44,18 @@ export interface PhotoMeta {
   timestamp: string
 }
 
+export interface ContactRecord {
+  id: string
+  name: string
+  number: string
+}
+
+export interface AppRecord {
+  name: string
+  package: string
+  icon?: string
+}
+
 export interface DeviceStatus {
   battery: number
   charging: boolean
@@ -54,4 +66,4 @@ export interface DeviceStatus {
   btConnected?: boolean
 }
 
-export type TabId = 'calls' | 'messages' | 'photos' | 'apps'
+export type TabId = 'calls' | 'messages' | 'photos' | 'apps' | 'contacts' | 'files'

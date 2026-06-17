@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain } from 'electron'
 import { join } from 'path'
+import * as fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase } from './database'
 import { startWebSocketServer } from './server'
@@ -140,6 +141,12 @@ if (!gotTheLock) {
     app.on('browser-window-created', (_, window) => {
       optimizer.watchWindowShortcuts(window)
     })
+
+    // Create local photos directory
+    const photosDir = join(app.getPath('userData'), 'photos')
+    if (!fs.existsSync(photosDir)) {
+      fs.mkdirSync(photosDir, { recursive: true })
+    }
 
     // Initialize database
     initDatabase()

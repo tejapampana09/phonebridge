@@ -1,5 +1,7 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, app } from 'electron'
 import { generateQR } from './qr'
+import * as fs from 'fs'
+import { join } from 'path'
 import {
   getNotifications,
   getCalls,
@@ -8,6 +10,8 @@ import {
   getPhotos,
   getDeviceStatus,
   saveSmses,
+  getContacts,
+  getApps,
   dismissNotification as dbDismissNotification
 } from './database'
 import { sendToPhone, getConnectedCount, getConnectedDeviceNames } from './server'
@@ -179,6 +183,139 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('get-device-status', async () => {
     return getDeviceStatus()
+  })
+
+  // get-contacts
+  ipcMain.handle('get-contacts', async () => {
+    return getContacts()
+  })
+
+  // get-apps
+  ipcMain.handle('get-apps', async () => {
+    return getApps()
+  })
+
+  // get-photo-data
+  ipcMain.handle('get-photo-data', async (_, id) => {
+    try {
+      const photosDir = join(app.getPath('userData'), 'photos')
+      const filePath = join(photosDir, `${id}.jpg`)
+      if (fs.existsSync(filePath)) {
+        const data = fs.readFileSync(filePath)
+        return `data:image/jpeg;base64,${data.toString('base64')}`
+      }
+    } catch (err) {
+      console.error('Failed to read local photo:', err)
+    }
+    return null
+  })
+
+  // download-photo
+  ipcMain.handle('download-photo', async (_, id) => {
+    const payload = {
+      type: 'REQUEST_FILE',
+      fileId: id,
+      fileType: 'photo'
+    }
+    console.log(`[IPC] Requesting photo download for: ${id}`)
+    if (getConnectedCount() > 0) {
+      sendToPhone(payload)
+      return true
+    } else if (isBluetoothAvailable()) {
+      return sendViaBluetooth(payload)
+    }
+    return false
+  })
+
+  // send-file-to-phone
+  ipcMain.handle('send-file-to-phone', async (_, { filePath }) => {
+    try {
+      if (!fs.existsSync(filePath)) return false
+      const stat = fs.statSync(filePath)
+      const fileName = require('path').basename(filePath)
+      const fileSize = stat.size
+      const fileId = `file_${Date.now()}`
+      
+      const CHUNK_SIZE = 64 * 1024 // 64 KB
+      const buffer = fs.readFileSync(filePath)
+      const totalChunks = Math.ceil(fileSize / CHUNK_SIZE)
+
+      // Send start
+      const startPayload = {
+        type: 'FILE_TRANSFER_START',
+        fileId,
+        fileName,
+        fileSize,
+        totalChunks
+      }
+      if (getConnectedCount() > 0) {
+        sendToPhone(startPayload)
+      } else if (isBluetoothAvailable()) {
+        sendViaBluetooth(startPayload)
+      }
+
+      // Send chunks
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE
+        const end = Math.min(start + CHUNK_SIZE, fileSize)
+        const chunk = buffer.subarray(start, end)
+        const dataBase64 = chunk.toString('base64')
+
+        const chunkPayload = {
+          type: 'FILE_TRANSFER_CHUNK',
+          fileId,
+          chunkIndex: i,
+          data: dataBase64
+        }
+        if (getConnectedCount() > 0) {
+          sendToPhone(chunkPayload)
+        } else if (isBluetoothAvailable()) {
+          sendViaBluetooth(chunkPayload)
+        }
+        // Delay to prevent network packet congestion
+        await new Promise((resolve) => setTimeout(resolve, 15))
+      }
+
+      // Send end
+      const endPayload = {
+        type: 'FILE_TRANSFER_END',
+        fileId
+      }
+      if (getConnectedCount() > 0) {
+        sendToPhone(endPayload)
+      } else if (isBluetoothAvailable()) {
+        sendViaBluetooth(endPayload)
+      }
+      console.log(`[IPC] File sent: ${fileName}`)
+      return true
+    } catch (err) {
+      console.error('[IPC] Failed to send file to phone:', err)
+      return false
+    }
+  })
+
+  // answer-call
+  ipcMain.handle('answer-call', async () => {
+    const payload = { type: 'ANSWER_CALL' }
+    if (getConnectedCount() > 0) {
+      sendToPhone(payload)
+      return true
+    } else if (isBluetoothAvailable()) {
+      return sendViaBluetooth(payload)
+    }
+    return false
+  })
+
+  // reject-call
+  ipcMain.handle('reject-call', async () => {
+    const payload = { type: 'REJECT_CALL' }
+    if (getConnectedCount() > 0) {
+      sendToPhone(payload)
+      return true
+    } else if (isBluetoothAvailable()) {
+      return sendViaBluetooth(payload)
+    }
+    return false
   })
 
   // 6. Request Sync

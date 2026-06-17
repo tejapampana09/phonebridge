@@ -17,6 +17,10 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 private const val TAG = "MessageHandler"
 
@@ -43,6 +47,12 @@ object MsgType {
     const val CONNECT_ACK          = "CONNECT_ACK"
     const val DIAL_NUMBER          = "DIAL_NUMBER"
     const val REPLY_NOTIFICATION   = "REPLY_NOTIFICATION"
+    const val ANSWER_CALL          = "ANSWER_CALL"
+    const val REJECT_CALL          = "REJECT_CALL"
+    const val REQUEST_FILE         = "REQUEST_FILE"
+    const val FILE_TRANSFER_START  = "FILE_TRANSFER_START"
+    const val FILE_TRANSFER_CHUNK  = "FILE_TRANSFER_CHUNK"
+    const val FILE_TRANSFER_END    = "FILE_TRANSFER_END"
 }
 
 /**
@@ -90,10 +100,36 @@ object MessageHandler {
                         Log.i(TAG, "Reply to notification $id: success=$success")
                     }
                 }
+                MsgType.ANSWER_CALL -> {
+                    val success = com.phonebridge.services.CallControlService.answerCall(context)
+                    Log.i(TAG, "Answer call trigger: success=$success")
+                }
+                MsgType.REJECT_CALL -> {
+                    val success = com.phonebridge.services.CallControlService.rejectCall(context)
+                    Log.i(TAG, "Reject call trigger: success=$success")
+                }
+                MsgType.REQUEST_FILE -> {
+                    val fileId = json.optString("fileId")
+                    val fileType = json.optString("fileType")
+                    if (fileId.isNotBlank()) {
+                        com.phonebridge.utils.FileTransferManager.sendFileToPc(context, fileId, fileType)
+                    }
+                }
+                MsgType.FILE_TRANSFER_START -> {
+                    com.phonebridge.utils.FileTransferManager.handleIncomingStart(json)
+                }
+                MsgType.FILE_TRANSFER_CHUNK -> {
+                    com.phonebridge.utils.FileTransferManager.handleIncomingChunk(json)
+                }
+                MsgType.FILE_TRANSFER_END -> {
+                    com.phonebridge.utils.FileTransferManager.handleIncomingEnd(json)
+                }
                 MsgType.CONNECT_ACK -> {
                     val pcName = json.optString("pc_name", "PC")
                     PairingManager.savePcName(pcName)
                     Log.i(TAG, "CONNECT_ACK from $pcName")
+                    // Trigger sync on connect acknowledgement
+                    triggerSync(context)
                     // Broadcast to update UI
                     val intent = Intent(ACTION_CONNECTED).putExtra(EXTRA_PC_NAME, pcName)
                     context.sendBroadcast(intent)
@@ -150,16 +186,26 @@ object MessageHandler {
         }
     }
 
-    private fun triggerSync(context: Context) {
+    fun triggerSync(context: Context) {
         try {
             ConnectionManager.send(com.phonebridge.sync.CallLogSync.getLastNCalls(context))
-            ConnectionManager.send(com.phonebridge.sync.SmsSync.getLastNThreads(context))
-            ConnectionManager.send(com.phonebridge.sync.PhotoSync.getRecentPhotos(context))
-            ConnectionManager.send(buildDeviceStatus(context))
+            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                delay(200)
+                ConnectionManager.send(com.phonebridge.sync.SmsSync.getLastNThreads(context))
+                delay(200)
+                ConnectionManager.send(com.phonebridge.sync.PhotoSync.getRecentPhotos(context))
+                delay(200)
+                ConnectionManager.send(com.phonebridge.sync.ContactsSync.getAllContacts(context))
+                delay(200)
+                ConnectionManager.send(com.phonebridge.sync.InstalledAppsSync.getInstalledApps(context))
+                delay(200)
+                ConnectionManager.send(buildDeviceStatus(context))
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Sync failed", e)
         }
     }
+
 
     // ──────────────────────────────────────────────────────────────────────────
     // Message builders — outgoing

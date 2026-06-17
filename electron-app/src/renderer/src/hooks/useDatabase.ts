@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { PhoneNotification, CallRecord, SmsThread, PhotoMeta, DeviceStatus } from '../types'
+import { PhoneNotification, CallRecord, SmsThread, PhotoMeta, DeviceStatus, ContactRecord, AppRecord } from '../types'
 
 declare global {
   interface Window {
@@ -13,6 +13,8 @@ export function useDatabase() {
   const [smsThreads, setSmsThreads] = useState<SmsThread[]>([])
   const [photos, setPhotos] = useState<PhotoMeta[]>([])
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null)
+  const [contacts, setContacts] = useState<ContactRecord[]>([])
+  const [apps, setApps] = useState<AppRecord[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchNotifications = useCallback(async () => {
@@ -66,6 +68,24 @@ export function useDatabase() {
     }
   }, [])
 
+  const fetchContacts = useCallback(async () => {
+    try {
+      const data = await window.api.getContacts()
+      setContacts(data || [])
+    } catch (err) {
+      console.error('Error fetching contacts:', err)
+    }
+  }, [])
+
+  const fetchApps = useCallback(async () => {
+    try {
+      const data = await window.api.getApps()
+      setApps(data || [])
+    } catch (err) {
+      console.error('Error fetching apps:', err)
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     await Promise.all([
@@ -73,10 +93,12 @@ export function useDatabase() {
       fetchCalls(),
       fetchSmsThreads(),
       fetchPhotos(),
-      fetchDeviceStatus()
+      fetchDeviceStatus(),
+      fetchContacts(),
+      fetchApps()
     ])
     setLoading(false)
-  }, [fetchNotifications, fetchCalls, fetchSmsThreads, fetchPhotos, fetchDeviceStatus])
+  }, [fetchNotifications, fetchCalls, fetchSmsThreads, fetchPhotos, fetchDeviceStatus, fetchContacts, fetchApps])
 
   useEffect(() => {
     refreshAll()
@@ -92,10 +114,14 @@ export function useDatabase() {
         fetchCalls()
       } else if (type === 'SMS_RECEIVED' || type === 'SMS_HISTORY') {
         fetchSmsThreads()
-      } else if (type === 'PHOTO_METADATA') {
+      } else if (type === 'PHOTO_METADATA' || type === 'PHOTO_DOWNLOADED') {
         fetchPhotos()
       } else if (type === 'DEVICE_STATUS') {
         fetchDeviceStatus()
+      } else if (type === 'CONTACTS_HISTORY') {
+        fetchContacts()
+      } else if (type === 'APPS_HISTORY') {
+        fetchApps()
       }
     })
 
@@ -109,7 +135,7 @@ export function useDatabase() {
       window.api.removePhoneEventListener(phoneSubscription)
       window.api.removeConnectionChangedListener(connectionSubscription)
     }
-  }, [refreshAll, fetchNotifications, fetchCalls, fetchSmsThreads, fetchPhotos, fetchDeviceStatus])
+  }, [refreshAll, fetchNotifications, fetchCalls, fetchSmsThreads, fetchPhotos, fetchDeviceStatus, fetchContacts, fetchApps])
 
   return {
     notifications,
@@ -117,12 +143,16 @@ export function useDatabase() {
     smsThreads,
     photos,
     deviceStatus,
+    contacts,
+    apps,
     loading,
     refreshAll,
     fetchNotifications,
     fetchCalls,
     fetchSmsThreads,
     fetchPhotos,
-    fetchDeviceStatus
+    fetchDeviceStatus,
+    fetchContacts,
+    fetchApps
   }
 }

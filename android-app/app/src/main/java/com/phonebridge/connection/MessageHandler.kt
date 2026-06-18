@@ -50,6 +50,7 @@ object MsgType {
     const val CONNECT_ACK          = "CONNECT_ACK"
     const val CLIENT_ACK           = "CLIENT_ACK"
     const val DIAL_NUMBER          = "DIAL_NUMBER"
+    const val START_CALL           = "START_CALL"
     const val REPLY_NOTIFICATION   = "REPLY_NOTIFICATION"
     const val ANSWER_CALL          = "ANSWER_CALL"
     const val REJECT_CALL          = "REJECT_CALL"
@@ -274,7 +275,7 @@ object MessageHandler {
                 MsgType.REQUEST_SYNC -> {
                     triggerSync(context)
                 }
-                MsgType.DIAL_NUMBER -> {
+                MsgType.DIAL_NUMBER, MsgType.START_CALL -> {
                     val number = json.optString("number")
                     if (number.isNotBlank()) dialNumber(context, number)
                 }

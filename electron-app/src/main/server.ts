@@ -363,6 +363,26 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
       break
     }
 
+    case 'CALL_ACTIVE': {
+      startAudioLoopback()
+      emitToRenderer('phone-event', { type: 'CALL_ACTIVE' })
+      emitToRenderer('phone-event', {
+        type: 'CALL_UPDATE',
+        data: { status: 'answered' }
+      })
+      break
+    }
+
+    case 'CALL_ENDED': {
+      stopAudioLoopback()
+      emitToRenderer('phone-event', { type: 'CALL_ENDED' })
+      emitToRenderer('phone-event', {
+        type: 'CALL_UPDATE',
+        data: { status: 'ended' }
+      })
+      break
+    }
+
     case 'CALL_UPDATE': {
       const status = msg.status as string
       if (status === 'answered' || status === 'dialing') {

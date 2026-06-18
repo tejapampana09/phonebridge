@@ -13,7 +13,7 @@
   ],
   "extraResources": [
     {
-      "from": "../phonebridge-native/bin/Debug/net8.0-windows10.0.19041.0",
+      "from": "../phonebridge-native/bin/Debug/net8.0-windows10.0.19041.0/win-x64/publish",
       "to": "phonebridge-native"
     }
   ],

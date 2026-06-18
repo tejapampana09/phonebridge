@@ -532,8 +532,8 @@ export function registerIpcHandlers(): void {
     return helperManager.getAudioDevices()
   })
 
-  ipcMain.handle('get-calling-status', async () => {
-    return helperManager.getCallingStatus()
+  ipcMain.handle('get-calling-status', async (_, includePairedDevices?: boolean) => {
+    return helperManager.getCallingStatus(includePairedDevices)
   })
 
   ipcMain.handle('start-pairing', async () => {
@@ -556,6 +556,18 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('set-call-mute', async (_, muted: boolean) => {
     return helperManager.setMute(muted)
+  })
+
+  ipcMain.handle('connect-hfp', async (_, deviceId: string) => {
+    return helperManager.connectHfp(deviceId)
+  })
+
+  ipcMain.handle('disconnect-hfp', async (_, deviceId: string) => {
+    return helperManager.disconnectHfp(deviceId)
+  })
+
+  ipcMain.handle('get-hfp-status', async () => {
+    return helperManager.getHfpStatus()
   })
 }
 

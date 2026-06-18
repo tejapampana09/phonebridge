@@ -49,7 +49,7 @@ function App() {
 
   const fetchCallingStatus = async () => {
     try {
-      const status = await window.api.getCallingStatus()
+      const status = await window.api.getCallingStatus(showSettingsModal)
       setCallingStatus(status)
       if (status) {
         setIsHfpConnected(!!(status.connectedPhone?.hfpVerified && status.audioDevices?.phoneInput && status.audioDevices?.phoneOutput))
@@ -65,7 +65,7 @@ function App() {
     fetchCallingStatus()
     const interval = setInterval(fetchCallingStatus, 4000)
     return () => clearInterval(interval)
-  }, [])
+  }, [showSettingsModal])
 
   useEffect(() => {
     const loadSettings = async () => {

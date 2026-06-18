@@ -37,7 +37,6 @@ class PhoneLinkService : Service() {
 
     private var heartbeatJob: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var callAudioRoutingManager: com.phonebridge.utils.CallAudioRoutingManager? = null
 
     /** Set to true by MessageHandler when it writes the PC clipboard to the phone.
      *  The clipboardListener will skip the next change to break the echo loop. */
@@ -49,15 +48,7 @@ class PhoneLinkService : Service() {
 
         fun isRunning(): Boolean = instance != null
 
-        fun startCallAudioRouting() {
-            Log.i("PhoneLinkService", "Companion call to start call audio routing")
-            instance?.callAudioRoutingManager?.startScoRouting()
-        }
 
-        fun stopCallAudioRouting() {
-            Log.i("PhoneLinkService", "Companion call to stop call audio routing")
-            instance?.callAudioRoutingManager?.stopScoRouting()
-        }
 
         fun suppressNextClipboard() {
             instance?.suppressNextClipboard = true
@@ -145,11 +136,6 @@ class PhoneLinkService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        try {
-            callAudioRoutingManager = com.phonebridge.utils.CallAudioRoutingManager(this)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to create CallAudioRoutingManager", e)
-        }
         createNotificationChannel()
         
         val notification = buildNotification("Connecting…")
@@ -185,12 +171,7 @@ class PhoneLinkService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            callAudioRoutingManager?.release()
-            callAudioRoutingManager = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to release CallAudioRoutingManager", e)
-        }
+
         instance = null
         heartbeatJob?.cancel()
         serviceScope.cancel()

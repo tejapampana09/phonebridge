@@ -56,12 +56,15 @@ const api = {
   
   // HFP Call Audio APIs
   getAudioDevices: () => ipcRenderer.invoke('get-audio-devices'),
-  getCallingStatus: () => ipcRenderer.invoke('get-calling-status'),
+  getCallingStatus: (includePairedDevices?: boolean) => ipcRenderer.invoke('get-calling-status', includePairedDevices),
   startPairing: () => ipcRenderer.invoke('start-pairing'),
   startCallAudio: (args: { phoneInput: string | number; phoneOutput: string | number; pcInput: string | number; pcOutput: string | number }) =>
     ipcRenderer.invoke('start-call-audio', args),
   stopCallAudio: () => ipcRenderer.invoke('stop-call-audio'),
   setCallMute: (muted: boolean) => ipcRenderer.invoke('set-call-mute', muted),
+  connectHfp: (deviceId: string) => ipcRenderer.invoke('connect-hfp', deviceId),
+  disconnectHfp: (deviceId: string) => ipcRenderer.invoke('disconnect-hfp', deviceId),
+  getHfpStatus: () => ipcRenderer.invoke('get-hfp-status'),
   
   // Real-time event listeners
   onPhoneEvent: (callback: (event: any, data: any) => void) => {

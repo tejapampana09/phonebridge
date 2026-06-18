@@ -60,11 +60,6 @@ class OutgoingCallReceiver : BroadcastReceiver() {
                     ConnectionManager.send(dialingJson.toString())
                     Log.d(TAG, "Sent CALL_UPDATE status: dialing for $name ($number)")
                 }
-                try {
-                    PhoneLinkService.startCallAudioRouting()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to start call audio routing in OutgoingCallReceiver", e)
-                }
             }
         }
     }
@@ -100,24 +95,26 @@ class CallReceiver : BroadcastReceiver() {
                 TelephonyManager.EXTRA_STATE_OFFHOOK -> {
                     // Call answered — include outgoing number if available
                     val outgoingNumber = OutgoingCallState.lastOutgoingNumber
+                    val activeJson = JSONObject().apply {
+                        put("type", "CALL_ACTIVE")
+                    }
                     val updateJson = JSONObject().apply {
                         put("type", "CALL_UPDATE")
                         put("status", "answered")
                         if (outgoingNumber.isNotBlank()) put("number", outgoingNumber as Any)
                     }
                     if (ConnectionManager.isConnected()) {
+                        ConnectionManager.send(activeJson.toString())
                         ConnectionManager.send(updateJson.toString())
-                        Log.d(TAG, "Sent CALL_UPDATE status: answered")
-                    }
-                    try {
-                        PhoneLinkService.startCallAudioRouting()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to start call audio routing", e)
+                        Log.d(TAG, "Sent CALL_ACTIVE and CALL_UPDATE status: answered")
                     }
                 }
                 TelephonyManager.EXTRA_STATE_IDLE -> {
                     // Call ended / declined
                     val lastCall = getLastCallLogEntry(context)
+                    val endedJson = JSONObject().apply {
+                        put("type", "CALL_ENDED")
+                    }
                     val updateJson = JSONObject().apply {
                         put("type", "CALL_UPDATE")
                         put("status", "ended")
@@ -126,13 +123,9 @@ class CallReceiver : BroadcastReceiver() {
                         put("callType", (lastCall?.type ?: "") as Any)
                     }
                     if (ConnectionManager.isConnected()) {
+                        ConnectionManager.send(endedJson.toString())
                         ConnectionManager.send(updateJson.toString())
-                        Log.d(TAG, "Sent CALL_UPDATE status: ended with number: ${lastCall?.number ?: ""}")
-                    }
-                    try {
-                        PhoneLinkService.stopCallAudioRouting()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to stop call audio routing", e)
+                        Log.d(TAG, "Sent CALL_ENDED and CALL_UPDATE status: ended with number: ${lastCall?.number ?: ""}")
                     }
                 }
             }

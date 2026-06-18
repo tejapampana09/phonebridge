@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useDatabase } from './hooks/useDatabase'
 import { PairingScreen } from './components/PairingScreen'
 import { Sidebar } from './components/Sidebar'
@@ -35,90 +35,6 @@ function App() {
   const [showMirroring, setShowMirroring] = useState(false)
   const [openAtLogin, setOpenAtLogin] = useState(false)
   const [isHfpConnected, setIsHfpConnected] = useState(false)
-
-  // Call Audio Loopback refs
-  const incomingAudioRef = useRef<HTMLAudioElement | null>(null)
-  const outgoingAudioRef = useRef<HTMLAudioElement | null>(null)
-  const incomingStreamRef = useRef<MediaStream | null>(null)
-  const outgoingStreamRef = useRef<MediaStream | null>(null)
-
-  const startCallAudio = async () => {
-    try {
-      console.log('[Audio] Starting call audio loopback...')
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      let handsFreeInput: MediaDeviceInfo | null = null
-      let handsFreeOutput: MediaDeviceInfo | null = null
-      let pcMic: MediaDeviceInfo | null = null
-
-      for (const d of devices) {
-        const label = d.label.toLowerCase()
-        if (d.kind === 'audioinput') {
-          if (label.includes('hands-free') || label.includes('handsfree') || label.includes('audio gateway') || (label.includes('bluetooth') && !label.includes('headset'))) {
-            handsFreeInput = d
-          } else if (!pcMic && (label.includes('microphone') || label.includes('default'))) {
-            pcMic = d
-          }
-        } else if (d.kind === 'audiooutput') {
-          if (label.includes('hands-free') || label.includes('handsfree') || label.includes('audio gateway') || (label.includes('bluetooth') && !label.includes('headset'))) {
-            handsFreeOutput = d
-          }
-        }
-      }
-
-      if (!handsFreeInput || !handsFreeOutput) {
-        console.warn('[Audio] Hands-free Bluetooth Call Audio endpoints not detected. Skipping programmatic loopback.')
-        return
-      }
-
-      console.log(`[Audio] Found Hands-free Input: ${handsFreeInput.label}, Output: ${handsFreeOutput.label}`)
-
-      // 1. Loopback 1: Capture phone audio input and play to PC speakers
-      const incomingStream = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: { exact: handsFreeInput.deviceId } }
-      })
-      incomingStreamRef.current = incomingStream
-      const incomingAudio = new Audio()
-      incomingAudio.srcObject = incomingStream
-      await incomingAudio.play()
-      incomingAudioRef.current = incomingAudio
-
-      // 2. Loopback 2: Capture PC microphone and play to phone audio output
-      const pcMicDeviceId = pcMic?.deviceId || 'default'
-      const outgoingStream = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: { exact: pcMicDeviceId } }
-      })
-      outgoingStreamRef.current = outgoingStream
-      const outgoingAudio = new Audio()
-      outgoingAudio.srcObject = outgoingStream
-      if (typeof outgoingAudio.setSinkId === 'function') {
-        await outgoingAudio.setSinkId(handsFreeOutput.deviceId)
-      }
-      await outgoingAudio.play()
-      outgoingAudioRef.current = outgoingAudio
-
-      console.log('[Audio] Loopback audio routing active.')
-    } catch (err) {
-      console.error('[Audio] Loopback failed to initialize:', err)
-    }
-  }
-
-  const stopCallAudio = () => {
-    try {
-      console.log('[Audio] Stopping call audio loopback...')
-      incomingAudioRef.current?.pause()
-      incomingAudioRef.current = null
-      outgoingAudioRef.current?.pause()
-      outgoingAudioRef.current = null
-
-      incomingStreamRef.current?.getTracks().forEach(t => t.stop())
-      incomingStreamRef.current = null
-      outgoingStreamRef.current?.getTracks().forEach(t => t.stop())
-      outgoingStreamRef.current = null
-      console.log('[Audio] Loopback audio routing stopped.')
-    } catch (err) {
-      console.error('[Audio] Failed to stop loopback safely:', err)
-    }
-  }
 
   const checkHfpStatus = async () => {
     try {
@@ -205,11 +121,8 @@ function App() {
         })
       } else if (type === 'CALL_UPDATE') {
         const { status } = data
-        if (status === 'answered') {
-          startCallAudio()
-        } else if (status === 'ended' || status === 'declined') {
+        if (status === 'ended' || status === 'declined') {
           setIncomingCall(null)
-          stopCallAudio()
         }
       }
     }
@@ -217,7 +130,6 @@ function App() {
     const sub = window.api.onPhoneEvent(handlePhoneEvents)
     return () => {
       window.api.removePhoneEventListener(sub)
-      stopCallAudio()
     }
   }, [])
 

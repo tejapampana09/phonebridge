@@ -501,14 +501,16 @@ export function registerIpcHandlers(): void {
     return sendMsgToPhone({ type: 'LOCATE_DEVICE' })
   })
 
-  // start-mirroring
+  // start-mirroring (Disabled - Feature Frozen)
   ipcMain.handle('start-mirroring', async () => {
-    return sendMsgToPhone({ type: 'START_MIRRORING' })
+    console.log('[IPC] start-mirroring requested but feature is currently frozen.')
+    return false
   })
 
-  // stop-mirroring
+  // stop-mirroring (Disabled - Feature Frozen)
   ipcMain.handle('stop-mirroring', async () => {
-    return sendMsgToPhone({ type: 'STOP_MIRRORING' })
+    console.log('[IPC] stop-mirroring requested but feature is currently frozen.')
+    return false
   })
 
   // check-for-updates

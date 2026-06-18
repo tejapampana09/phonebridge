@@ -227,14 +227,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span>{isLocating ? 'Locating...' : 'Locate Device'}</span>
                 </button>
 
-                {/* Mirror Screen */}
+                {/* Mirror Screen (Frozen / Postponed) */}
                 <button
-                  onClick={onOpenMirroring}
-                  className="flex items-center justify-center space-x-1.5 p-2 bg-card border border-border hover:bg-hover text-secondary hover:text-white rounded-lg text-[10px] font-bold transition-all"
-                  title="Start Realtime Screen Mirroring"
+                  disabled
+                  className="flex items-center justify-center space-x-1.5 p-2 bg-card border border-border text-dim opacity-50 rounded-lg text-[10px] font-bold cursor-not-allowed select-none"
+                  title="Screen Mirroring (Coming Soon)"
                 >
                   <MonitorPlay size={12} />
-                  <span>Mirror Screen</span>
+                  <span>Mirror Screen (Soon)</span>
                 </button>
               </div>
 

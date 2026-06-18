@@ -339,13 +339,10 @@ object MessageHandler {
                     }
                 }
                 MsgType.START_MIRRORING -> {
-                    val intent = Intent(context, com.phonebridge.pairing.MirroringActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    context.startActivity(intent)
+                    Log.i(TAG, "START_MIRRORING ignored - feature frozen")
                 }
                 MsgType.STOP_MIRRORING -> {
-                    com.phonebridge.utils.MirroringManager.stopMirroring()
+                    Log.i(TAG, "STOP_MIRRORING ignored - feature frozen")
                 }
                 MsgType.NOTIFICATION_ACTION -> {
                     val id = json.optString("id")

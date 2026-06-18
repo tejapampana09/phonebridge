@@ -107,6 +107,7 @@ export function startWebSocketServer(): void {
         const text = data.toString()
         const rawJson = JSON.parse(text)
         const c = clients.get(ws)
+        if (!c) return
 
         if (rawJson.encrypted === true) {
           if (c && c.aesKey) {
@@ -115,15 +116,17 @@ export function startWebSocketServer(): void {
               const decryptedJson = JSON.parse(decryptedText)
               handleIncoming(decryptedJson, { type: 'ws', ws })
             } catch (decErr) {
-              console.error('[WS] Decryption failed for payload:', decErr)
+              console.error('[WS] Decryption failed. Terminating connection:', decErr)
+              ws.terminate()
             }
           } else {
-            console.error('[WS] Received encrypted payload but AES key is not derived yet.')
+            console.error('[WS] Received encrypted payload but AES key is not derived. Terminating connection.')
+            ws.terminate()
           }
         } else {
-          // Plaintext message
+          // Plaintext message is only allowed for CLIENT_ACK (which completes handshake)
           if (rawJson.type === 'CLIENT_ACK') {
-            const clientPublicKey = rawJson.publicKey
+            const clientPublicKey = rawJson.publicKey as string
             if (c && c.privateKey && clientPublicKey) {
               try {
                 const derivedKey = deriveAESKey(c.privateKey, clientPublicKey)
@@ -140,15 +143,21 @@ export function startWebSocketServer(): void {
                   count: clients.size
                 })
               } catch (dhErr) {
-                console.error('[WS] ECDH derivation failed:', dhErr)
+                console.error('[WS] ECDH derivation failed. Terminating connection:', dhErr)
+                ws.terminate()
               }
+            } else {
+              console.error('[WS] Invalid CLIENT_ACK public key. Terminating connection.')
+              ws.terminate()
             }
           } else {
-            handleIncoming(rawJson, { type: 'ws', ws })
+            console.warn('[WS] Received unauthorized plaintext message. Terminating connection.')
+            ws.terminate()
           }
         }
       } catch (err) {
-        console.error('[WS] Failed to parse message:', err)
+        console.error('[WS] Failed to parse incoming message. Terminating connection:', err)
+        ws.terminate()
       }
     })
 
@@ -498,7 +507,7 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
     }
 
     case 'MIRROR_FRAME': {
-      emitToRenderer('phone-event', { type: 'MIRROR_FRAME', data: msg.data })
+      // Ignored - Feature Frozen
       break
     }
 
@@ -515,24 +524,36 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
 function sendToClient(ws: WebSocket, message: object): void {
   if (ws.readyState === WebSocket.OPEN) {
     const c = clients.get(ws)
-    let finalPayload: string
-    if (c && c.handshakeComplete && c.aesKey) {
+    if (!c) return
+
+    // CONNECT_ACK is the only message that is allowed to be sent in plaintext,
+    // because it contains the PC's public key to start the handshake.
+    const isHandshakeInit = (message as any).type === 'CONNECT_ACK'
+
+    if (isHandshakeInit) {
+      const finalPayload = JSON.stringify(message)
+      ws.send(finalPayload)
+      return
+    }
+
+    if (c.handshakeComplete && c.aesKey) {
       try {
         const plaintext = JSON.stringify(message)
         const encrypted = encryptAES_GCM(plaintext, c.aesKey)
-        finalPayload = JSON.stringify({
+        const finalPayload = JSON.stringify({
           encrypted: true,
           iv: encrypted.iv,
           ciphertext: encrypted.ciphertext
         })
+        ws.send(finalPayload)
       } catch (encErr) {
-        console.error('[WS] Encryption failed for message:', encErr)
-        finalPayload = JSON.stringify(message)
+        console.error('[WS] Encryption failed. Terminating connection:', encErr)
+        ws.terminate()
       }
     } else {
-      finalPayload = JSON.stringify(message)
+      console.warn('[WS] Attempted to send message before handshake complete. Terminating connection.')
+      ws.terminate()
     }
-    ws.send(finalPayload)
   }
 }
 

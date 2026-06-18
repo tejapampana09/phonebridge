@@ -19,7 +19,7 @@ import {
   setDatabaseEncryptionKey,
   clearDatabaseEncryptionKey
 } from './database'
-import { emitToRenderer } from './ipc'
+import { emitToRenderer, startAudioLoopback, stopAudioLoopback } from './ipc'
 import { showNotification, showCallNotification } from './notifications'
 
 interface ConnectedClient {
@@ -364,10 +364,18 @@ export function handleIncoming(msg: Record<string, unknown>, source?: { type: 'w
     }
 
     case 'CALL_UPDATE': {
+      const status = msg.status as string
+      if (status === 'answered' || status === 'dialing') {
+        startAudioLoopback()
+      } else if (status === 'ended' || status === 'declined') {
+        stopAudioLoopback()
+      }
       emitToRenderer('phone-event', {
         type: 'CALL_UPDATE',
         data: {
           status: msg.status,
+          number: msg.number,
+          name: msg.name,
           duration: msg.duration
         }
       })

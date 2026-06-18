@@ -54,6 +54,13 @@ const api = {
   stopMirroring: () => ipcRenderer.invoke('stop-mirroring'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   
+  // HFP Call Audio APIs
+  getAudioDevices: () => ipcRenderer.invoke('get-audio-devices'),
+  startCallAudio: (args: { phoneInput: string | number; phoneOutput: string | number; pcInput: string | number; pcOutput: string | number }) =>
+    ipcRenderer.invoke('start-call-audio', args),
+  stopCallAudio: () => ipcRenderer.invoke('stop-call-audio'),
+  setCallMute: (muted: boolean) => ipcRenderer.invoke('set-call-mute', muted),
+  
   // Real-time event listeners
   onPhoneEvent: (callback: (event: any, data: any) => void) => {
     const subscription = (_event: any, data: any) => callback(_event, data)

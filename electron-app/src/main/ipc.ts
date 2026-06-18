@@ -24,6 +24,7 @@ import {
 } from './database'
 import { sendToPhone, getConnectedCount, getConnectedDeviceNames, disconnectAllClients } from './server'
 import { isBluetoothAvailable, sendViaBluetooth, isBluetoothConnected, disconnectBluetoothClient } from './bluetooth'
+import { helperManager } from './helperManager'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -69,6 +70,14 @@ export function saveSettings(s: object): void {
 }
 
 export function registerIpcHandlers(): void {
+  // Start python helper process
+  helperManager.start()
+
+  // Clean shutdown
+  app.on('before-quit', () => {
+    helperManager.stop()
+  })
+
   // 1. Get QR Code
   ipcMain.handle('get-qr-code', async () => {
     try {
@@ -517,4 +526,42 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('check-for-updates', async () => {
     return { success: true, updateAvailable: false, version: '1.0.0' }
   })
+
+  // 10. Native Call Audio Loopback
+  ipcMain.handle('get-audio-devices', async () => {
+    return helperManager.getAudioDevices()
+  })
+
+  ipcMain.handle('start-call-audio', async (_, args) => {
+    const { phoneInput, phoneOutput, pcInput, pcOutput } = args as {
+      phoneInput: string | number
+      phoneOutput: string | number
+      pcInput: string | number
+      pcOutput: string | number
+    }
+    return helperManager.startLoopback(phoneInput, phoneOutput, pcInput, pcOutput)
+  })
+
+  ipcMain.handle('stop-call-audio', async () => {
+    return helperManager.stopLoopback()
+  })
+
+  ipcMain.handle('set-call-mute', async (_, muted: boolean) => {
+    return helperManager.setMute(muted)
+  })
+}
+
+export async function startAudioLoopback(): Promise<boolean> {
+  const settings = getSettings()
+  const phoneInput = settings.phoneInput || 'auto'
+  const phoneOutput = settings.phoneOutput || 'auto'
+  const pcInput = settings.pcInput || 'auto'
+  const pcOutput = settings.pcOutput || 'auto'
+  console.log(`[IPC] Starting automatic call audio loopback: PhoneInput=${phoneInput}, PhoneOutput=${phoneOutput}, PCInput=${pcInput}, PCOutput=${pcOutput}`)
+  return helperManager.startLoopback(phoneInput, phoneOutput, pcInput, pcOutput)
+}
+
+export async function stopAudioLoopback(): Promise<boolean> {
+  console.log('[IPC] Stopping automatic call audio loopback')
+  return helperManager.stopLoopback()
 }

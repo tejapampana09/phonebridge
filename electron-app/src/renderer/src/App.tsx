@@ -31,21 +31,32 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabId>('calls')
   const [isPaired, setIsPaired] = useState(false)
   const [incomingCall, setIncomingCall] = useState<{ name: string; number: string } | null>(null)
+  const [activeCall, setActiveCall] = useState<{ name: string; number: string; status: 'dialing' | 'active' } | null>(null)
+  const [callDuration, setCallDuration] = useState(0)
+  const [isMuted, setIsMuted] = useState(false)
+  const [audioDevices, setAudioDevices] = useState<any[]>([])
+
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [showMirroring, setShowMirroring] = useState(false)
   const [openAtLogin, setOpenAtLogin] = useState(false)
   const [isHfpConnected, setIsHfpConnected] = useState(false)
 
+  const [prefMic, setPrefMic] = useState('auto')
+  const [prefSpeaker, setPrefSpeaker] = useState('auto')
+  const [prefPhoneIn, setPrefPhoneIn] = useState('auto')
+  const [prefPhoneOut, setPrefPhoneOut] = useState('auto')
+
   const checkHfpStatus = async () => {
     try {
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      const hasHfp = devices.some(d => 
-        (d.kind === 'audioinput' || d.kind === 'audiooutput') && 
-        (d.label.toLowerCase().includes('hands-free') || 
-         d.label.toLowerCase().includes('handsfree') ||
-         d.label.toLowerCase().includes('bluetooth'))
+      const devices = await window.api.getAudioDevices()
+      const hasHfp = devices.some((d: any) => 
+        (d.max_input_channels > 0 || d.max_output_channels > 0) && 
+        (d.name.toLowerCase().includes('hands-free') || 
+         d.name.toLowerCase().includes('handsfree') ||
+         d.name.toLowerCase().includes('bthhfenum'))
       )
       setIsHfpConnected(hasHfp)
+      setAudioDevices(devices)
     } catch (err) {
       console.error('Failed to query audio devices:', err)
     }
@@ -62,12 +73,41 @@ function App() {
       try {
         const s = await window.api.getSettings()
         setOpenAtLogin(s.openAtLogin ?? false)
+        setPrefMic(s.phonePrefMic ?? 'auto')
+        setPrefSpeaker(s.phonePrefSpeaker ?? 'auto')
+        setPrefPhoneIn(s.phonePrefPhoneIn ?? 'auto')
+        setPrefPhoneOut(s.phonePrefPhoneOut ?? 'auto')
       } catch (err) {
         console.error('Failed to load settings:', err)
       }
     }
     loadSettings()
   }, [])
+
+  // Call Active Timer
+  useEffect(() => {
+    let timer: NodeJS.Timeout
+    if (activeCall?.status === 'active') {
+      timer = setInterval(() => {
+        setCallDuration((prev) => prev + 1)
+      }, 1000)
+    } else {
+      setCallDuration(0)
+    }
+    return () => clearInterval(timer)
+  }, [activeCall])
+
+  const formatCallDuration = (sec: number) => {
+    const m = Math.floor(sec / 60).toString().padStart(2, '0')
+    const s = (sec % 60).toString().padStart(2, '0')
+    return `${m}:${s}`
+  }
+
+  const toggleMute = async () => {
+    const nextMute = !isMuted
+    setIsMuted(nextMute)
+    await window.api.setCallMute(nextMute)
+  }
 
   const {
     notifications,
@@ -109,7 +149,7 @@ function App() {
     return () => clearInterval(interval)
   }, [])
 
-  // Listen to phone events for incoming call modal
+  // Listen to phone events for incoming call modal and active call HUD
   useEffect(() => {
     const handlePhoneEvents = (_event: any, payload: any) => {
       const { type, data } = payload
@@ -120,9 +160,25 @@ function App() {
           number: data.number || 'Unknown'
         })
       } else if (type === 'CALL_UPDATE') {
-        const { status } = data
-        if (status === 'ended' || status === 'declined') {
+        const { status, number, name } = data
+        if (status === 'dialing') {
+          setActiveCall({
+            name: name || 'Unknown',
+            number: number || 'Unknown',
+            status: 'dialing'
+          })
           setIncomingCall(null)
+        } else if (status === 'answered') {
+          setActiveCall(prev => ({
+            name: prev?.name || name || 'Unknown',
+            number: prev?.number || number || 'Unknown',
+            status: 'active'
+          }))
+          setIncomingCall(null)
+        } else if (status === 'ended' || status === 'declined') {
+          setActiveCall(null)
+          setIncomingCall(null)
+          setIsMuted(false)
         }
       }
     }
@@ -460,11 +516,11 @@ function App() {
               </div>
 
               {/* Call Audio Settings */}
-              <div className="flex flex-col p-3.5 bg-primary/30 border border-border/60 rounded-xl space-y-3">
+              <div className="flex flex-col p-3.5 bg-primary/30 border border-border/60 rounded-xl space-y-3 max-h-[300px] overflow-y-auto">
                 <div>
                   <h4 className="text-xs font-bold text-white">Call Audio Setup (Bluetooth)</h4>
                   <p className="text-[10px] text-dim mt-0.5">
-                    Call audio routing requires your phone to be paired with Windows Bluetooth.
+                    Select preferred audio input/output devices for PhoneBridge voice calls.
                   </p>
                 </div>
                 
@@ -473,6 +529,82 @@ function App() {
                   <span className={`font-bold ${isHfpConnected ? 'text-success' : 'text-warning'}`}>
                     {isHfpConnected ? 'Connected & Ready' : 'Not Connected'}
                   </span>
+                </div>
+
+                {/* PC Microphone Select */}
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[9px] font-bold text-secondary uppercase tracking-wider">PC Microphone</label>
+                  <select
+                    value={prefMic}
+                    onChange={async (e) => {
+                      const val = e.target.value
+                      setPrefMic(val)
+                      await window.api.setSetting('phonePrefMic', val)
+                    }}
+                    className="w-full bg-card border border-border/60 text-xs text-white rounded-lg p-2 outline-none focus:border-accent"
+                  >
+                    <option value="auto">Auto-detect Default</option>
+                    {audioDevices.filter(d => d.max_input_channels > 0 && !d.name.toLowerCase().includes('hands-free') && !d.name.toLowerCase().includes('hfp') && !d.name.toLowerCase().includes('bthhfenum')).map(d => (
+                      <option key={d.index} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* PC Speaker Select */}
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[9px] font-bold text-secondary uppercase tracking-wider">PC Speakers / Headphones</label>
+                  <select
+                    value={prefSpeaker}
+                    onChange={async (e) => {
+                      const val = e.target.value
+                      setPrefSpeaker(val)
+                      await window.api.setSetting('phonePrefSpeaker', val)
+                    }}
+                    className="w-full bg-card border border-border/60 text-xs text-white rounded-lg p-2 outline-none focus:border-accent"
+                  >
+                    <option value="auto">Auto-detect Default</option>
+                    {audioDevices.filter(d => d.max_output_channels > 0 && !d.name.toLowerCase().includes('hands-free') && !d.name.toLowerCase().includes('hfp') && !d.name.toLowerCase().includes('bthhfenum')).map(d => (
+                      <option key={d.index} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Phone HFP Input Device Select */}
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[9px] font-bold text-secondary uppercase tracking-wider">Phone Bluetooth Input (HFP)</label>
+                  <select
+                    value={prefPhoneIn}
+                    onChange={async (e) => {
+                      const val = e.target.value
+                      setPrefPhoneIn(val)
+                      await window.api.setSetting('phonePrefPhoneIn', val)
+                    }}
+                    className="w-full bg-card border border-border/60 text-xs text-white rounded-lg p-2 outline-none focus:border-accent"
+                  >
+                    <option value="auto">Auto-detect (Recommended)</option>
+                    {audioDevices.filter(d => d.max_input_channels > 0 && (d.name.toLowerCase().includes('hands-free') || d.name.toLowerCase().includes('handsfree') || d.name.toLowerCase().includes('bthhfenum'))).map(d => (
+                      <option key={d.index} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Phone HFP Output Device Select */}
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[9px] font-bold text-secondary uppercase tracking-wider">Phone Bluetooth Output (HFP)</label>
+                  <select
+                    value={prefPhoneOut}
+                    onChange={async (e) => {
+                      const val = e.target.value
+                      setPrefPhoneOut(val)
+                      await window.api.setSetting('phonePrefPhoneOut', val)
+                    }}
+                    className="w-full bg-card border border-border/60 text-xs text-white rounded-lg p-2 outline-none focus:border-accent"
+                  >
+                    <option value="auto">Auto-detect (Recommended)</option>
+                    {audioDevices.filter(d => d.max_output_channels > 0 && (d.name.toLowerCase().includes('hands-free') || d.name.toLowerCase().includes('handsfree') || d.name.toLowerCase().includes('bthhfenum'))).map(d => (
+                      <option key={d.index} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <button
@@ -530,6 +662,117 @@ function App() {
       {/* 5. Screen Mirroring Modal Overlay */}
       {showMirroring && (
         <MirroringModal onClose={() => setShowMirroring(false)} />
+      )}
+
+      {/* 6. Active Call Floating HUD */}
+      {activeCall && (
+        <div className="fixed bottom-6 right-6 w-80 bg-sidebar border border-accent/30 rounded-2xl shadow-2xl p-4 z-40 animate-fade-in flex flex-col space-y-4">
+          <div className="flex items-center justify-between border-b border-border/50 pb-2">
+            <div className="flex items-center space-x-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
+              </span>
+              <span className="text-[10px] uppercase font-bold tracking-wider text-accent">
+                {activeCall.status === 'dialing' ? 'Calling...' : 'Active Call'}
+              </span>
+            </div>
+            {activeCall.status === 'active' && (
+              <span className="text-[10px] font-mono text-secondary bg-card px-2 py-0.5 rounded border border-border">
+                {formatCallDuration(callDuration)}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-full bg-card border border-border flex items-center justify-center font-bold text-accent">
+              {(activeCall.name || 'U').charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="text-xs font-bold text-white truncate">{activeCall.name}</h4>
+              <p className="text-[10px] text-dim truncate mt-0.5">{activeCall.number}</p>
+            </div>
+          </div>
+
+          {/* Quick Audio Routing Selectors */}
+          <div className="space-y-1.5 text-[10px] bg-primary/40 p-2 rounded-xl border border-border/60">
+            <div className="flex items-center justify-between">
+              <span className="text-dim">Mic:</span>
+              <select
+                value={prefMic}
+                onChange={async (e) => {
+                  const val = e.target.value
+                  setPrefMic(val)
+                  await window.api.setSetting('phonePrefMic', val)
+                  // Restart loopback dynamically
+                  if (activeCall.status === 'active' || activeCall.status === 'dialing') {
+                    await window.api.startCallAudio({ phoneInput: prefPhoneIn, phoneOutput: prefPhoneOut, pcInput: val, pcOutput: prefSpeaker })
+                  }
+                }}
+                className="bg-card border border-border/60 text-white rounded px-1.5 py-0.5 max-w-[150px] outline-none"
+              >
+                <option value="auto">Auto-detect</option>
+                {audioDevices.filter(d => d.max_input_channels > 0 && !d.name.toLowerCase().includes('hands-free') && !d.name.toLowerCase().includes('hfp') && !d.name.toLowerCase().includes('bthhfenum')).map(d => (
+                  <option key={d.index} value={d.name}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-dim">Speaker:</span>
+              <select
+                value={prefSpeaker}
+                onChange={async (e) => {
+                  const val = e.target.value
+                  setPrefSpeaker(val)
+                  await window.api.setSetting('phonePrefSpeaker', val)
+                  // Restart loopback dynamically
+                  if (activeCall.status === 'active' || activeCall.status === 'dialing') {
+                    await window.api.startCallAudio({ phoneInput: prefPhoneIn, phoneOutput: prefPhoneOut, pcInput: prefMic, pcOutput: val })
+                  }
+                }}
+                className="bg-card border border-border/60 text-white rounded px-1.5 py-0.5 max-w-[150px] outline-none"
+              >
+                <option value="auto">Auto-detect</option>
+                {audioDevices.filter(d => d.max_output_channels > 0 && !d.name.toLowerCase().includes('hands-free') && !d.name.toLowerCase().includes('hfp') && !d.name.toLowerCase().includes('bthhfenum')).map(d => (
+                  <option key={d.index} value={d.name}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center space-x-4 pt-1">
+            {/* Mute Button */}
+            <button
+              onClick={toggleMute}
+              className={`p-2.5 rounded-full border transition-all ${
+                isMuted
+                  ? 'bg-warning/20 border-warning text-warning'
+                  : 'bg-card border-border hover:bg-hover text-dim hover:text-white'
+              }`}
+              title={isMuted ? 'Unmute Microphone' : 'Mute Microphone'}
+            >
+              <Minus size={16} />
+            </button>
+
+            {/* Hang Up Button */}
+            <button
+              onClick={async () => {
+                try {
+                  await window.api.rejectCall()
+                } catch (err) {
+                  console.error(err)
+                }
+                setActiveCall(null)
+                setCallDuration(0)
+              }}
+              className="p-2.5 bg-danger hover:bg-danger/80 text-white rounded-full transition-all flex items-center justify-center shadow-lg shadow-danger/25"
+              title="Hang Up"
+            >
+              <Phone size={16} className="rotate-[135deg]" />
+            </button>
+          </div>
+        </div>
       )}
 
     </div>

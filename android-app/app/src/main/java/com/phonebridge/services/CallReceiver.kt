@@ -14,10 +14,30 @@ import org.json.JSONObject
 
 private const val TAG = "CallReceiver"
 
-/**
- * Holds the last outgoing dialed number captured from ACTION_NEW_OUTGOING_CALL.
- * Used to enrich CALL_UPDATE messages when EXTRA_STATE_OFFHOOK fires.
- */
+internal fun getContactNameHelper(context: Context, phoneNumber: String): String {
+    var contactName = "Unknown"
+    var cursor: Cursor? = null
+    try {
+        val uri = Uri.withAppendedPath(
+            ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+            Uri.encode(phoneNumber)
+        )
+        val projection = arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME)
+        cursor = context.contentResolver.query(uri, projection, null, null, null)
+        if (cursor != null && cursor.moveToFirst()) {
+            val columnIndex = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
+            if (columnIndex != -1) {
+                contactName = cursor.getString(columnIndex) ?: "Unknown"
+            }
+        }
+    } catch (e: Exception) {
+        Log.e("CallReceiver", "Error looking up contact name", e)
+    } finally {
+        cursor?.close()
+    }
+    return if (contactName == "Unknown") phoneNumber else contactName
+}
+
 object OutgoingCallState {
     @Volatile var lastOutgoingNumber: String = ""
 }
@@ -25,8 +45,27 @@ object OutgoingCallState {
 class OutgoingCallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_NEW_OUTGOING_CALL) {
-            val number = intent.getStringExtra(Intent.EXTRA_PHONE_NUMBER)
-            OutgoingCallState.lastOutgoingNumber = number ?: ""
+            val number = intent.getStringExtra(Intent.EXTRA_PHONE_NUMBER) ?: ""
+            OutgoingCallState.lastOutgoingNumber = number
+            
+            if (number.isNotEmpty()) {
+                val name = getContactNameHelper(context, number)
+                val dialingJson = JSONObject().apply {
+                    put("type", "CALL_UPDATE")
+                    put("status", "dialing")
+                    put("number", number as Any)
+                    put("name", name as Any)
+                }
+                if (ConnectionManager.isConnected()) {
+                    ConnectionManager.send(dialingJson.toString())
+                    Log.d(TAG, "Sent CALL_UPDATE status: dialing for $name ($number)")
+                }
+                try {
+                    PhoneLinkService.startCallAudioRouting()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to start call audio routing in OutgoingCallReceiver", e)
+                }
+            }
         }
     }
 }
@@ -47,11 +86,11 @@ class CallReceiver : BroadcastReceiver() {
             when (state) {
                 TelephonyManager.EXTRA_STATE_RINGING -> {
                     val num = incomingNumber ?: ""
-                    val contactName = if (num.isNotEmpty()) getContactName(context, num) else "Unknown"
+                    val contactName = if (num.isNotEmpty()) getContactNameHelper(context, num) else "Unknown"
                     val callJson = JSONObject().apply {
                         put("type", "CALL_INCOMING")
-                        put("number", num)
-                        put("name", contactName)
+                        put("number", num as Any)
+                        put("name", contactName as Any)
                     }
                     if (ConnectionManager.isConnected()) {
                         ConnectionManager.send(callJson.toString())
@@ -64,7 +103,7 @@ class CallReceiver : BroadcastReceiver() {
                     val updateJson = JSONObject().apply {
                         put("type", "CALL_UPDATE")
                         put("status", "answered")
-                        if (outgoingNumber.isNotBlank()) put("number", outgoingNumber)
+                        if (outgoingNumber.isNotBlank()) put("number", outgoingNumber as Any)
                     }
                     if (ConnectionManager.isConnected()) {
                         ConnectionManager.send(updateJson.toString())
@@ -82,9 +121,9 @@ class CallReceiver : BroadcastReceiver() {
                     val updateJson = JSONObject().apply {
                         put("type", "CALL_UPDATE")
                         put("status", "ended")
-                        put("number", lastCall?.number ?: "")
-                        put("name", lastCall?.name ?: "")
-                        put("callType", lastCall?.type ?: "")
+                        put("number", (lastCall?.number ?: "") as Any)
+                        put("name", (lastCall?.name ?: "") as Any)
+                        put("callType", (lastCall?.type ?: "") as Any)
                     }
                     if (ConnectionManager.isConnected()) {
                         ConnectionManager.send(updateJson.toString())
@@ -100,33 +139,6 @@ class CallReceiver : BroadcastReceiver() {
         } catch (e: Exception) {
             Log.e(TAG, "Error processing phone state change", e)
         }
-    }
-
-    /**
-     * Look up the contact name for a given phone number from the Contacts ContentProvider.
-     */
-    private fun getContactName(context: Context, phoneNumber: String): String {
-        var contactName = "Unknown"
-        var cursor: Cursor? = null
-        try {
-            val uri = Uri.withAppendedPath(
-                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
-                Uri.encode(phoneNumber)
-            )
-            val projection = arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME)
-            cursor = context.contentResolver.query(uri, projection, null, null, null)
-            if (cursor != null && cursor.moveToFirst()) {
-                val columnIndex = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
-                if (columnIndex != -1) {
-                    contactName = cursor.getString(columnIndex)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error looking up contact name", e)
-        } finally {
-            cursor?.close()
-        }
-        return contactName
     }
 
     data class CallLogEntry(val number: String, val name: String, val type: String)
@@ -167,7 +179,7 @@ class CallReceiver : BroadcastReceiver() {
                     else -> "unknown"
                 }
                 
-                val name = if (cachedName.isNotEmpty()) cachedName else getContactName(context, number)
+                val name = if (cachedName.isNotEmpty()) cachedName else getContactNameHelper(context, number)
                 entry = CallLogEntry(number, name, typeStr)
             }
         } catch (e: Exception) {

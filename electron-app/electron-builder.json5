@@ -11,6 +11,12 @@
     "dist-electron/**",
     "out/**"
   ],
+  "extraResources": [
+    {
+      "from": "../phonebridge-native/bin/Debug/net8.0-windows10.0.19041.0",
+      "to": "phonebridge-native"
+    }
+  ],
   "win": {
     "target": [
       {"target": "nsis", "arch": ["x64"]},

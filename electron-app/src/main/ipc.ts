@@ -532,6 +532,14 @@ export function registerIpcHandlers(): void {
     return helperManager.getAudioDevices()
   })
 
+  ipcMain.handle('get-calling-status', async () => {
+    return helperManager.getCallingStatus()
+  })
+
+  ipcMain.handle('start-pairing', async () => {
+    return helperManager.startPairing()
+  })
+
   ipcMain.handle('start-call-audio', async (_, args) => {
     const { phoneInput, phoneOutput, pcInput, pcOutput } = args as {
       phoneInput: string | number

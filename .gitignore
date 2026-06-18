@@ -47,3 +47,9 @@ captures/
 # Operating System Files
 .DS_Store
 Thumbs.db
+
+# .NET / C# Specific
+**/bin/
+**/obj/
+*.user
+*.suo

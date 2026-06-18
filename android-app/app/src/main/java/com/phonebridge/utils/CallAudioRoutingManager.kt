@@ -66,9 +66,21 @@ class CallAudioRoutingManager(private val context: Context) {
     fun startScoRouting() {
         try {
             Log.i(TAG, "Requesting SCO audio routing")
-            audioManager.mode = AudioManager.MODE_IN_CALL
+            
+            // Log detailed diagnostics before routing
+            val currentMode = audioManager.mode
+            val isScoOn = audioManager.isBluetoothScoOn
+            val isScoAvailable = audioManager.isBluetoothScoAvailableOffCall
+            val connectedDevices = bluetoothHeadset?.connectedDevices?.size ?: 0
+            
+            Log.d(TAG, "SCO Diagnostics: Mode=$currentMode, ScoOn=$isScoOn, ScoAvailable=$isScoAvailable, ConnectedDevices=$connectedDevices")
+            
+            // Set mode to IN_COMMUNICATION for voice/VoIP routing
+            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
             audioManager.startBluetoothSco()
             audioManager.isBluetoothScoOn = true
+            
+            Log.d(TAG, "SCO Diagnostics after start: Mode=${audioManager.mode}, ScoOn=${audioManager.isBluetoothScoOn}")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start SCO routing", e)
         }

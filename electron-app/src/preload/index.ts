@@ -56,6 +56,8 @@ const api = {
   
   // HFP Call Audio APIs
   getAudioDevices: () => ipcRenderer.invoke('get-audio-devices'),
+  getCallingStatus: () => ipcRenderer.invoke('get-calling-status'),
+  startPairing: () => ipcRenderer.invoke('start-pairing'),
   startCallAudio: (args: { phoneInput: string | number; phoneOutput: string | number; pcInput: string | number; pcOutput: string | number }) =>
     ipcRenderer.invoke('start-call-audio', args),
   stopCallAudio: () => ipcRenderer.invoke('stop-call-audio'),

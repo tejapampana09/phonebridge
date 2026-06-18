@@ -4,16 +4,16 @@ import { app } from 'electron'
 import * as fs from 'fs'
 
 class HelperManager {
-  private pythonProcess: ChildProcess | null = null
+  private nativeProcess: ChildProcess | null = null
   private responseQueue: ((value: any) => void)[] = []
   private isShuttingDown = false
   private helperPath = ''
 
   constructor() {
-    // Determine path to helper.py
-    const devPath = join(app.getAppPath(), '../phonebridge-helper/helper.py')
-    const prodPath = join(app.getAppPath(), 'phonebridge-helper/helper.py')
-    const directPath = join(__dirname, '../../phonebridge-helper/helper.py')
+    // Determine path to phonebridge-native.exe
+    const devPath = join(app.getAppPath(), '../phonebridge-native/bin/Debug/net8.0-windows10.0.19041.0/phonebridge-native.exe')
+    const prodPath = join(process.resourcesPath, 'phonebridge-native/phonebridge-native.exe')
+    const directPath = join(__dirname, '../../phonebridge-native/bin/Debug/net8.0-windows10.0.19041.0/phonebridge-native.exe')
 
     if (fs.existsSync(directPath)) {
       this.helperPath = directPath
@@ -23,25 +23,24 @@ class HelperManager {
       this.helperPath = prodPath
     }
 
-    console.log(`[HelperManager] Helper script path resolved to: ${this.helperPath}`)
+    console.log(`[HelperManager] Native service path resolved to: ${this.helperPath}`)
   }
 
   public start(): void {
-    if (this.pythonProcess) {
+    if (this.nativeProcess) {
       return
     }
 
     this.isShuttingDown = false
-    console.log('[HelperManager] Spawning python audio helper...')
+    console.log('[HelperManager] Spawning phonebridge-native helper...')
 
     try {
-      this.pythonProcess = spawn('python', [this.helperPath])
+      this.nativeProcess = spawn(this.helperPath)
 
       let stdoutBuffer = ''
-      this.pythonProcess.stdout?.on('data', (data: Buffer) => {
+      this.nativeProcess.stdout?.on('data', (data: Buffer) => {
         stdoutBuffer += data.toString('utf-8')
         const lines = stdoutBuffer.split('\n')
-        // Keep the last partial line in the buffer
         stdoutBuffer = lines.pop() || ''
 
         for (const line of lines) {
@@ -54,18 +53,18 @@ class HelperManager {
               resolve(parsed)
             }
           } catch (err) {
-            console.error('[HelperManager] Error parsing helper JSON line:', err, 'Line:', trimmed)
+            console.error('[HelperManager] Error parsing native JSON line:', err, 'Line:', trimmed)
           }
         }
       })
 
-      this.pythonProcess.stderr?.on('data', (data: Buffer) => {
+      this.nativeProcess.stderr?.on('data', (data: Buffer) => {
         console.warn(`[Helper stderr]: ${data.toString('utf-8').trim()}`)
       })
 
-      this.pythonProcess.on('close', (code) => {
-        console.log(`[HelperManager] Python helper process closed with code ${code}`)
-        this.pythonProcess = null
+      this.nativeProcess.on('close', (code) => {
+        console.log(`[HelperManager] Native helper process closed with code ${code}`)
+        this.nativeProcess = null
         this.responseQueue.forEach(resolve => resolve({ status: 'error', error: 'Process closed' }))
         this.responseQueue = []
 
@@ -75,37 +74,60 @@ class HelperManager {
         }
       })
     } catch (err) {
-      console.error('[HelperManager] Failed to spawn python helper:', err)
+      console.error('[HelperManager] Failed to spawn native helper:', err)
     }
   }
 
   public stop(): void {
     this.isShuttingDown = true
-    if (this.pythonProcess) {
-      console.log('[HelperManager] Stopping python helper process...')
-      this.pythonProcess.kill()
-      this.pythonProcess = null
+    if (this.nativeProcess) {
+      console.log('[HelperManager] Stopping native helper process...')
+      this.nativeProcess.kill()
+      this.nativeProcess = null
     }
   }
 
   private sendCommand(command: string, args: object = {}): Promise<any> {
     return new Promise((resolve) => {
-      if (!this.pythonProcess) {
+      if (!this.nativeProcess) {
         resolve({ status: 'error', error: 'Helper process is not running' })
         return
       }
 
       const payload = JSON.stringify({ command, args }) + '\n'
       this.responseQueue.push(resolve)
-      this.pythonProcess.stdin?.write(payload)
+      this.nativeProcess.stdin?.write(payload)
     })
+  }
+
+  public async getCallingStatus(): Promise<any> {
+    try {
+      const res = await this.sendCommand('GET_CALLING_STATUS')
+      if (res && res.status === 'success') {
+        return res.data
+      }
+      console.error('[HelperManager] GET_CALLING_STATUS failed:', res?.error)
+    } catch (err) {
+      console.error('[HelperManager] Error fetching calling status:', err)
+    }
+    return null
+  }
+
+  public async startPairing(): Promise<boolean> {
+    try {
+      const res = await this.sendCommand('START_PAIRING')
+      return res && res.status === 'success'
+    } catch (err) {
+      console.error('[HelperManager] Error triggering pairing:', err)
+    }
+    return false
   }
 
   public async getAudioDevices(): Promise<any[]> {
     try {
       const res = await this.sendCommand('LIST_DEVICES')
       if (res && res.status === 'success') {
-        return res.devices || []
+        return res.data?.devices || []
       }
       console.error('[HelperManager] LIST_DEVICES failed:', res?.error)
     } catch (err) {
@@ -115,39 +137,44 @@ class HelperManager {
   }
 
   public async startLoopback(
-    phoneInput: string | number,
-    phoneOutput: string | number,
-    pcInput: string | number,
-    pcOutput: string | number
+    phoneInput?: string | number,
+    phoneOutput?: string | number,
+    pcInput?: string | number,
+    pcOutput?: string | number
   ): Promise<boolean> {
     try {
-      const res = await this.sendCommand('START_LOOPBACK', {
-        phone_input: phoneInput,
-        phone_output: phoneOutput,
-        pc_input: pcInput,
-        pc_output: pcOutput
+      const phoneInputId = typeof phoneInput === 'string' ? phoneInput : undefined
+      const phoneOutputId = typeof phoneOutput === 'string' ? phoneOutput : undefined
+      const pcInputId = typeof pcInput === 'string' ? pcInput : undefined
+      const pcOutputId = typeof pcOutput === 'string' ? pcOutput : undefined
+
+      const res = await this.sendCommand('START_AUDIO_ROUTING', {
+        phoneInputId,
+        phoneOutputId,
+        pcInputId,
+        pcOutputId
       })
       if (res && res.status === 'success') {
-        console.log('[HelperManager] Loopback started successfully:', res.rates)
+        console.log('[HelperManager] Audio routing started successfully.')
         return true
       }
-      console.error('[HelperManager] START_LOOPBACK failed:', res?.error)
+      console.error('[HelperManager] START_AUDIO_ROUTING failed:', res?.error)
     } catch (err) {
-      console.error('[HelperManager] Error starting loopback:', err)
+      console.error('[HelperManager] Error starting routing:', err)
     }
     return false
   }
 
   public async stopLoopback(): Promise<boolean> {
     try {
-      const res = await this.sendCommand('STOP_LOOPBACK')
+      const res = await this.sendCommand('STOP_AUDIO_ROUTING')
       if (res && res.status === 'success') {
-        console.log('[HelperManager] Loopback stopped successfully.')
+        console.log('[HelperManager] Audio routing stopped successfully.')
         return true
       }
-      console.error('[HelperManager] STOP_LOOPBACK failed:', res?.error)
+      console.error('[HelperManager] STOP_AUDIO_ROUTING failed:', res?.error)
     } catch (err) {
-      console.error('[HelperManager] Error stopping loopback:', err)
+      console.error('[HelperManager] Error stopping routing:', err)
     }
     return false
   }

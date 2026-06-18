@@ -40,31 +40,30 @@ function App() {
   const [showMirroring, setShowMirroring] = useState(false)
   const [openAtLogin, setOpenAtLogin] = useState(false)
   const [isHfpConnected, setIsHfpConnected] = useState(false)
+  const [callingStatus, setCallingStatus] = useState<any>(null)
 
   const [prefMic, setPrefMic] = useState('auto')
   const [prefSpeaker, setPrefSpeaker] = useState('auto')
   const [prefPhoneIn, setPrefPhoneIn] = useState('auto')
   const [prefPhoneOut, setPrefPhoneOut] = useState('auto')
 
-  const checkHfpStatus = async () => {
+  const fetchCallingStatus = async () => {
     try {
+      const status = await window.api.getCallingStatus()
+      setCallingStatus(status)
+      if (status) {
+        setIsHfpConnected(!!(status.connectedPhone?.hfpVerified && status.audioDevices?.phoneInput && status.audioDevices?.phoneOutput))
+      }
       const devices = await window.api.getAudioDevices()
-      const hasHfp = devices.some((d: any) => 
-        (d.max_input_channels > 0 || d.max_output_channels > 0) && 
-        (d.name.toLowerCase().includes('hands-free') || 
-         d.name.toLowerCase().includes('handsfree') ||
-         d.name.toLowerCase().includes('bthhfenum'))
-      )
-      setIsHfpConnected(hasHfp)
       setAudioDevices(devices)
     } catch (err) {
-      console.error('Failed to query audio devices:', err)
+      console.error('Failed to query calling status or audio devices:', err)
     }
   }
 
   useEffect(() => {
-    checkHfpStatus()
-    const interval = setInterval(checkHfpStatus, 4000)
+    fetchCallingStatus()
+    const interval = setInterval(fetchCallingStatus, 4000)
     return () => clearInterval(interval)
   }, [])
 
@@ -529,6 +528,63 @@ function App() {
                   <span className={`font-bold ${isHfpConnected ? 'text-success' : 'text-warning'}`}>
                     {isHfpConnected ? 'Connected & Ready' : 'Not Connected'}
                   </span>
+                </div>
+
+                {/* 6-step setup checklist */}
+                <div className="flex flex-col space-y-1.5 pt-2 border-t border-border/40">
+                  <label className="text-[9px] font-bold text-secondary uppercase tracking-wider">Calling Setup Wizard</label>
+                  <div className="space-y-1 text-[10px]">
+                    <div className="flex items-center justify-between p-1.5 bg-card/50 rounded border border-border/40">
+                      <span className="text-dim">Step 1: WiFi Link Connected</span>
+                      <span className={deviceStatus?.connected ? "text-success font-bold" : "text-danger font-bold"}>
+                        {deviceStatus?.connected ? "✓ Pass" : "✗ Fail"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-1.5 bg-card/50 rounded border border-border/40">
+                      <span className="text-dim">Step 2: Android Permissions Granted</span>
+                      <span className={deviceStatus?.connected ? "text-success font-bold" : "text-danger font-bold"}>
+                        {deviceStatus?.connected ? "✓ Pass" : "✗ Fail"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-1.5 bg-card/50 rounded border border-border/40">
+                      <span className="text-dim">Step 3: Bluetooth Paired</span>
+                      <span className={callingStatus?.pairedDevices?.length > 0 ? "text-success font-bold" : "text-danger font-bold"}>
+                        {callingStatus?.pairedDevices?.length > 0 ? "✓ Pass" : "✗ Fail"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-1.5 bg-card/50 rounded border border-border/40">
+                      <span className="text-dim">Step 4: HFP Connection Verified</span>
+                      <span className={callingStatus?.connectedPhone?.hfpVerified ? "text-success font-bold" : "text-danger font-bold"}>
+                        {callingStatus?.connectedPhone?.hfpVerified ? "✓ Pass" : "✗ Fail"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-1.5 bg-card/50 rounded border border-border/40">
+                      <span className="text-dim">Step 5: Hands-Free Audio Endpoints Active</span>
+                      <span className={(callingStatus?.audioDevices?.phoneInput && callingStatus?.audioDevices?.phoneOutput) ? "text-success font-bold" : "text-danger font-bold"}>
+                        {(callingStatus?.audioDevices?.phoneInput && callingStatus?.audioDevices?.phoneOutput) ? "✓ Pass" : "✗ Fail"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-1.5 bg-card/50 rounded border border-border/40">
+                      <span className="text-dim">Step 6: Calling System Ready</span>
+                      <span className={isHfpConnected ? "text-success font-bold" : "text-warning font-bold"}>
+                        {isHfpConnected ? "✓ Ready" : "• Waiting..."}
+                      </span>
+                    </div>
+                  </div>
+                  {(!callingStatus?.pairedDevices?.length || !callingStatus?.connectedPhone?.hfpVerified) && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          await window.api.startPairing()
+                        } catch (err) {
+                          console.error(err)
+                        }
+                      }}
+                      className="w-full text-center py-2 bg-accent hover:bg-accent/80 text-white font-bold rounded-lg text-[10px] transition-all shadow-md mt-1"
+                    >
+                      Pair / Connect Phone via Bluetooth
+                    </button>
+                  )}
                 </div>
 
                 {/* PC Microphone Select */}
